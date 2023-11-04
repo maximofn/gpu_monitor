@@ -1,6 +1,6 @@
 # GPU Monitor
 
-Real-time GPU status tracking right on your Ubuntu menu bar.
+🖥️ GPU Monitor for Ubuntu: The Ultimate Real-Time GPU Tracking Tool. Monitor your GPU's performance, temperature, and memory usage directly from your Ubuntu menu bar with GPU Monitor. This user-friendly and efficient application supports multiple GPUs and is fully integrated with the latest Ubuntu operating system. Get live updates and optimize your gaming or development tasks. Download now and take control of your GPU's health today!
 
 ![gpu monitor](https://maximofn.com/wp-content/uploads/2023/11/gpu_monitor.png)
 
