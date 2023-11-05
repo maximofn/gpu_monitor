@@ -16,7 +16,12 @@ def main():
     GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
     GPU_indicator.set_menu(build_menu())
 
-    # Get GPU info
+    # Update GPU info every second
+    GLib.timeout_add_seconds(1, update_gpu_info, GPU_indicator)
+
+    GLib.MainLoop().run()
+
+def update_gpu_info(indicator):
     device_count, gpu_info = get_gpu_info()
 
     info = ""
@@ -31,9 +36,9 @@ def main():
             info += f"{gpu_info[i]['memory_total']}MB->"
             info += f"{gpu_info[i]['temp']}ºC"
 
-    GPU_indicator.set_label(info, "Indicator")
+    indicator.set_label(info, "Indicator")
 
-    GLib.MainLoop().run()
+    return True
 
 def build_menu():
     menu = gtk.Menu()
