@@ -37,7 +37,6 @@ fi
 if command -v conda &>/dev/null; then
     conda deactivate
 fi
-deactivate
 ```
 
 Now install the dependencies
@@ -45,8 +44,8 @@ Now install the dependencies
 ```bash
 sudo apt-get install python3-gi python3-gi-cairo gir1.2-gtk-3.0
 sudo apt-get install gir1.2-appindicator3-0.1
-pip install nvidia-ml-py3
-pip install pynvml
+pip3 install nvidia-ml-py3
+pip3 install pynvml
 ```
 
 ## Execution at start-up
