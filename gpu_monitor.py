@@ -56,13 +56,13 @@ def build_menu():
         gpu_temp = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[1][i]['temp']}ºC")
         menu.append(gpu_temp)
 
-        gpu_memory_used = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[1][i]['memory_used']:.2f}")
+        gpu_memory_used = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[1][i]['memory_used']:.2f} MB")
         menu.append(gpu_memory_used)
 
-        gpu_memory_free = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[1][i]['memory_total'] - gpu_info[1][i]['memory_used']:.2f}")
+        gpu_memory_free = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[1][i]['memory_total'] - gpu_info[1][i]['memory_used']:.2f} MB")
         menu.append(gpu_memory_free)
 
-        gpu_memory_total = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[1][i]['memory_total']:.2f}")
+        gpu_memory_total = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[1][i]['memory_total']:.2f} MB")
         menu.append(gpu_memory_total)
 
         horizontal_separator = gtk.SeparatorMenuItem()
