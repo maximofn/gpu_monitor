@@ -6,6 +6,7 @@ from gi.repository import AppIndicator3, GLib
 from gi.repository import Gtk as gtk
 import os
 import pynvml
+import webbrowser
 
 APPINDICATOR_ID = 'GPU_monitor'
 
@@ -40,12 +41,28 @@ def update_gpu_info(indicator):
 
     return True
 
+def open_repo_link(_):
+    webbrowser.open('https://github.com/maximofn/gpu_monitor')
+
+def buy_me_a_coffe(_):
+    webbrowser.open('https://www.buymeacoffee.com/maximofn')
+
 def build_menu():
     menu = gtk.Menu()
-    item_hello = gtk.MenuItem(label='Hola Mundo')
-    # item_hello.connect('activate', hello)
-    menu.append(item_hello)
-    # menu.show_all()
+
+    item_repo = gtk.MenuItem(label='Repository')
+    item_repo.connect('activate', open_repo_link)
+    menu.append(item_repo)
+
+    item_buy_me_a_coffe = gtk.MenuItem(label='Buy me a coffe')
+    item_buy_me_a_coffe.connect('activate', buy_me_a_coffe)
+    menu.append(item_buy_me_a_coffe)
+
+    item_quit = gtk.MenuItem(label='Quit')
+    item_quit.connect('activate', quit)
+    menu.append(item_quit)
+
+    menu.show_all()
     return menu
 
 def get_gpu_info():
