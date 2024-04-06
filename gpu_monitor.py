@@ -58,6 +58,9 @@ def build_menu():
     item_buy_me_a_coffe.connect('activate', buy_me_a_coffe)
     menu.append(item_buy_me_a_coffe)
 
+    horizontal_separator = gtk.SeparatorMenuItem()
+    menu.append(horizontal_separator)
+
     item_quit = gtk.MenuItem(label='Quit')
     item_quit.connect('activate', quit)
     menu.append(item_quit)
