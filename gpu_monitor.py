@@ -50,6 +50,24 @@ def buy_me_a_coffe(_):
 def build_menu():
     menu = gtk.Menu()
 
+    gpu_info = get_gpu_info()
+
+    for i in range(gpu_info[0]):
+        gpu_temp = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[1][i]['temp']}ºC")
+        menu.append(gpu_temp)
+
+        gpu_memory_used = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[1][i]['memory_used']:.2f}")
+        menu.append(gpu_memory_used)
+
+        gpu_memory_free = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[1][i]['memory_total'] - gpu_info[1][i]['memory_used']:.2f}")
+        menu.append(gpu_memory_free)
+
+        gpu_memory_total = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[1][i]['memory_total']:.2f}")
+        menu.append(gpu_memory_total)
+
+        horizontal_separator = gtk.SeparatorMenuItem()
+        menu.append(horizontal_separator)
+
     item_repo = gtk.MenuItem(label='Repository')
     item_repo.connect('activate', open_repo_link)
     menu.append(item_repo)
