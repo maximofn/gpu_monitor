@@ -7,13 +7,38 @@ from gi.repository import Gtk as gtk
 import os
 import pynvml
 import webbrowser
+import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw, ImageFont
+import re
 
 APPINDICATOR_ID = 'GPU_monitor'
 
+BLUE_COLOR = '#66b3ff'
+RED_COLOR = '#ff6666'
+GREEN_COLOR = '#99ff99'
+ORANGE_COLOR = '#ffcc99'
+YELLOW_COLOR = '#ffdb4d'
+WHITE_COLOR = (255, 255, 255, 255)
+
+PERCENTAGE_WARNING1 = 70
+PERCENTAGE_WARNING2 = 80
+PERCENTAGE_CAUTION = 90
+
+PATH = os.path.dirname(os.path.realpath(__file__))
+ICON_PATH = os.path.abspath(f"{PATH}/tarjeta-de-video.png")
+INFO_ICON_PATH = os.path.abspath(f"{PATH}/gpu_info.png")
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+
+GPU_ICON = Image.open(ICON_PATH)
+
+ICON_HEIGHT = 22
+PADDING = 10
+
+FONT_SIZE_FACTOR = 0.65
+FONT_WIDTH_FACTOR = 8
+
 def main():
-    path = os.path.dirname(os.path.realpath(__file__))
-    icon_path = os.path.abspath(f"{path}/tarjeta-de-video.png")
-    GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, icon_path, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
+    GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
     GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
     GPU_indicator.set_menu(build_menu())
 
@@ -23,21 +48,11 @@ def main():
     GLib.MainLoop().run()
 
 def update_gpu_info(indicator):
-    device_count, gpu_info = get_gpu_info()
-
-    info = ""
-    for i in range(device_count):
-        info += f" {i}->"
-        if device_count > 1:
-            info += f"{int(gpu_info[i]['memory_used'])}/"
-            info += f"{int(gpu_info[i]['memory_total'])}MB->"
-            info += f"{int(gpu_info[i]['temp'])}ºC"
-        else:
-            info += f"{gpu_info[i]['memory_used']}/"
-            info += f"{gpu_info[i]['memory_total']}MB->"
-            info += f"{gpu_info[i]['temp']}ºC"
-
-    indicator.set_label(info, "Indicator")
+    # Generate GPU info icon
+    _, _ = get_gpu_info()
+    
+    # Update icon
+    indicator.set_icon_full(INFO_ICON_PATH, "GPU Usage")
 
     return True
 
@@ -93,26 +108,114 @@ def get_gpu_info():
     # Get number of devices
     device_count = pynvml.nvmlDeviceGetCount()
 
-    gpu_info = {}
+    # Dict to store GPU info
+    gpu_info = list(range(device_count))
+
+    # Resize GPU icon
+    gpu_icon_relation = GPU_ICON.width / GPU_ICON.height
+    gpu_icon_width = int(ICON_HEIGHT * gpu_icon_relation)
+    scaled_gpu_icon = GPU_ICON.resize((gpu_icon_width, ICON_HEIGHT), Image.LANCZOS)
+
+    scaled_gpu_info = scaled_gpu_icon
 
     for i in range(device_count):
+        # Init dict with GPU info
         gpu_info[i] = {}
 
-        # Obtener el identificador del dispositivo
+        # Get GPU handle by index
         handle = pynvml.nvmlDeviceGetHandleByIndex(i)
         
-        # Obtener la información de memoria
+        # Get memory info of the GPU
         memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
         
-        # Obtener la información de la temperatura
+        # Get temperature of the GPU
         temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
 
+        # Calculate usage memory, free memory and total memory
         memory_used = memory_info.used / 1024**2
         memory_total = memory_info.total / 1024**2
+        memory_free = memory_total - memory_used
 
+        # Add GPU info to dict
         gpu_info[i]["memory_used"] = memory_used
         gpu_info[i]["memory_total"] = memory_total
+        gpu_info[i]["memory_free"] = memory_free
         gpu_info[i]["temp"] = temp
+
+        # Create list with memory info
+        labels = 'Used', 'Free'
+        used_size = memory_used / memory_total * 100
+        free_size = memory_free / memory_total * 100
+        sizes = [used_size, free_size]
+        percentage_of_use = sizes[0]
+
+        # Assign color to memory usage chart
+        if percentage_of_use < PERCENTAGE_WARNING1:
+            used_color = GREEN_COLOR
+        elif percentage_of_use >= PERCENTAGE_WARNING1 and percentage_of_use < PERCENTAGE_WARNING2:
+            used_color = YELLOW_COLOR
+        elif percentage_of_use >= PERCENTAGE_WARNING2 and percentage_of_use < PERCENTAGE_CAUTION:
+            used_color = ORANGE_COLOR
+        else:
+            used_color = RED_COLOR
+        total_color = BLUE_COLOR
+        colors = [used_color, total_color]
+        explode = (0.1, 0)  # Explode used memory
+
+        # Create memory usage chart
+        fig, ax = plt.subplots()
+        ax.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%',
+            startangle=90, pctdistance=0.85, counterclock=False, wedgeprops=dict(width=0.3, edgecolor='w'))
+
+        # Draw a circle at the center of pie to make it look like a donut
+        centre_circle = plt.Circle((0,0), 0.70, fc='none', edgecolor='none')
+        fig = plt.gcf()
+        fig.gca().add_artist(centre_circle)
+
+        # Equal aspect ratio ensures that pie is drawn as a circle
+        ax.axis('equal')
+        plt.tight_layout()
+
+        # Save pie chart
+        plt.savefig(f"{PATH}/gpu_chart_{i}.png", transparent=True)
+        plt.close(fig)
+
+        # Load pie chart as PIL image
+        gpu_chart = Image.open(f'{PATH}/gpu_chart_{i}.png')
+
+        # Resize chart
+        chart_icon_relation = gpu_chart.width / gpu_chart.height
+        chart_icon_width = int(ICON_HEIGHT * chart_icon_relation)
+        scaled_gpu_chart = gpu_chart.resize((chart_icon_width, ICON_HEIGHT), Image.LANCZOS)
+
+        # New image with GPU info, GPU number and GPU chart
+        i_str = str(f" GPU {i}({temp}ºC)")
+        i_str_width = len(i_str) * FONT_WIDTH_FACTOR
+        total_width = scaled_gpu_info.width + i_str_width + scaled_gpu_chart.width
+        combined_image = Image.new('RGBA', (total_width, ICON_HEIGHT + PADDING), (0, 0, 0, 0))  # Transparent background
+
+        # Combine GPU info and GPU chart
+        gpu_info_position = (0, int(PADDING/2))
+        combined_image.paste(scaled_gpu_info, gpu_info_position)
+        chart_position = (scaled_gpu_info.width + i_str_width, int(PADDING/2))
+        combined_image.paste(scaled_gpu_chart, chart_position, scaled_gpu_chart)
+
+        # Create font object
+        draw = ImageDraw.Draw(combined_image)
+        font_size = int(ICON_HEIGHT * FONT_SIZE_FACTOR)
+        font = ImageFont.truetype(FONT_PATH, font_size)
+
+        # Get position of text
+        text_position = (scaled_gpu_info.width, int((ICON_HEIGHT + PADDING - font_size) / 2))
+
+        # Draw text
+        draw.text(text_position, i_str, font=font, fill=WHITE_COLOR)
+
+        # Update scaled_gpu_info. Asign to combined_image without padding
+        scaled_gpu_info = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
+
+    # Save combined image
+    combined_image.save(f'{PATH}/gpu_info.png')
         
     # Finalizar NVML
     pynvml.nvmlShutdown()
@@ -120,5 +223,15 @@ def get_gpu_info():
     return device_count, gpu_info
 
 if __name__ == "__main__":
+    if not os.path.exists(ICON_PATH):
+        print(f"Error: {ICON_PATH} not found")
+        exit(1)
+    # if os.path.exists(INFO_ICON_PATH):
+    #     os.remove(INFO_ICON_PATH)
+
+    # Find files with gpu_chart_*.png and delete them
+    for file in os.listdir(PATH):
+        if re.search(r'gpu_chart_\d+.png', file):
+            os.remove(f"{PATH}/{file}")
     signal.signal(signal.SIGINT, signal.SIG_DFL) # Allow the program to be terminated with Ctrl+C
     main()
