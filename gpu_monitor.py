@@ -40,6 +40,11 @@ FONT_WIDTH_FACTOR = 8
 image_to_show = None
 old_image_to_show = None
 
+gpu_temp_item = None
+gpu_memory_used_item = None
+gpu_memory_free_item = None
+gpu_memory_total_item = None
+
 def main():
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
     GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
@@ -55,7 +60,7 @@ def update_gpu_info(indicator):
     global old_image_to_show
 
     # Generate GPU info icon
-    get_gpu_info()
+    device_count, gpu_info = get_gpu_info()
     
     # Update icon
     info_icon_path = os.path.abspath(f"{PATH}/{image_to_show}")
@@ -63,6 +68,9 @@ def update_gpu_info(indicator):
 
     # Update old_image_to_show
     old_image_to_show = image_to_show
+
+    # Update menu
+    update_menu(device_count, gpu_info)
 
     return True
 
@@ -73,22 +81,32 @@ def buy_me_a_coffe(_):
     webbrowser.open('https://www.buymeacoffee.com/maximofn')
 
 def build_menu():
+    global gpu_temp_item
+    global gpu_memory_used_item
+    global gpu_memory_free_item
+    global gpu_memory_total_item
+
     menu = gtk.Menu()
 
-    gpu_info = get_gpu_info()
+    device_count, gpu_info = get_gpu_info()
 
-    for i in range(gpu_info[0]):
-        gpu_temp = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[1][i]['temp']}ºC")
-        menu.append(gpu_temp)
+    gpu_temp_item = list(range(device_count))
+    gpu_memory_used_item = list(range(device_count))
+    gpu_memory_free_item = list(range(device_count))
+    gpu_memory_total_item = list(range(device_count))
 
-        gpu_memory_used = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[1][i]['memory_used']:.2f} MB")
-        menu.append(gpu_memory_used)
+    for i in range(device_count):
+        gpu_temp_item[i] = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
+        menu.append(gpu_temp_item[i])
 
-        gpu_memory_free = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[1][i]['memory_total'] - gpu_info[1][i]['memory_used']:.2f} MB")
-        menu.append(gpu_memory_free)
+        gpu_memory_used_item[i] = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
+        menu.append(gpu_memory_used_item[i])
 
-        gpu_memory_total = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[1][i]['memory_total']:.2f} MB")
-        menu.append(gpu_memory_total)
+        gpu_memory_free_item[i] = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
+        menu.append(gpu_memory_free_item[i])
+
+        gpu_memory_total_item[i] = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
+        menu.append(gpu_memory_total_item[i])
 
         horizontal_separator = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator)
@@ -110,6 +128,13 @@ def build_menu():
 
     menu.show_all()
     return menu
+
+def update_menu(device_count, gpu_info):
+    for i in range(device_count):
+        gpu_temp_item[i].set_label(f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
+        gpu_memory_used_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
+        gpu_memory_free_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
+        gpu_memory_total_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
 
 def get_gpu_info():
     global image_to_show
