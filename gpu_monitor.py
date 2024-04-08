@@ -10,6 +10,7 @@ import webbrowser
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import re
+import time
 
 APPINDICATOR_ID = 'GPU_monitor'
 
@@ -26,7 +27,6 @@ PERCENTAGE_CAUTION = 90
 
 PATH = os.path.dirname(os.path.realpath(__file__))
 ICON_PATH = os.path.abspath(f"{PATH}/tarjeta-de-video.png")
-INFO_ICON_PATH = os.path.abspath(f"{PATH}/gpu_info.png")
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
 GPU_ICON = Image.open(ICON_PATH)
@@ -36,6 +36,9 @@ PADDING = 10
 
 FONT_SIZE_FACTOR = 0.65
 FONT_WIDTH_FACTOR = 8
+
+image_to_show = None
+old_image_to_show = None
 
 def main():
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
@@ -48,11 +51,18 @@ def main():
     GLib.MainLoop().run()
 
 def update_gpu_info(indicator):
+    global image_to_show
+    global old_image_to_show
+
     # Generate GPU info icon
-    _, _ = get_gpu_info()
+    get_gpu_info()
     
     # Update icon
-    indicator.set_icon_full(INFO_ICON_PATH, "GPU Usage")
+    info_icon_path = os.path.abspath(f"{PATH}/{image_to_show}")
+    indicator.set_icon_full(info_icon_path, "GPU Usage")
+
+    # Update old_image_to_show
+    old_image_to_show = image_to_show
 
     return True
 
@@ -102,6 +112,9 @@ def build_menu():
     return menu
 
 def get_gpu_info():
+    global image_to_show
+    global old_image_to_show
+
     # Init NVML
     pynvml.nvmlInit()
 
@@ -215,7 +228,13 @@ def get_gpu_info():
         scaled_gpu_info = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
 
     # Save combined image
-    combined_image.save(f'{PATH}/gpu_info.png')
+    timestamp = int(time.time())
+    image_to_show = f'gpu_info_{timestamp}.png'
+    combined_image.save(f'{PATH}/{image_to_show}')
+
+    # Remove old image
+    if os.path.exists(f'{PATH}/{old_image_to_show}'):
+        os.remove(f'{PATH}/{old_image_to_show}')
         
     # Finalizar NVML
     pynvml.nvmlShutdown()
@@ -226,8 +245,11 @@ if __name__ == "__main__":
     if not os.path.exists(ICON_PATH):
         print(f"Error: {ICON_PATH} not found")
         exit(1)
-    # if os.path.exists(INFO_ICON_PATH):
-    #     os.remove(INFO_ICON_PATH)
+    
+    # Remove all gpu_info_*.png files
+    for file in os.listdir(PATH):
+        if re.search(r'gpu_info_\d+.png', file):
+            os.remove(f'{PATH}/{file}')
 
     # Find files with gpu_chart_*.png and delete them
     for file in os.listdir(PATH):
