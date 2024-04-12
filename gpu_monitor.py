@@ -13,6 +13,7 @@ import re
 import time
 
 APPINDICATOR_ID = 'GPU_monitor'
+DEBUG = False
 
 BLUE_COLOR = '#66b3ff'
 RED_COLOR = '#ff6666'
@@ -44,6 +45,7 @@ gpu_temp_item = None
 gpu_memory_used_item = None
 gpu_memory_free_item = None
 gpu_memory_total_item = None
+gpu_process_items = None
 
 def main():
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
@@ -63,8 +65,9 @@ def update_gpu_info(indicator):
     device_count, gpu_info = get_gpu_info()
     
     # Update icon
-    info_icon_path = os.path.abspath(f"{PATH}/{image_to_show}")
-    indicator.set_icon_full(info_icon_path, "GPU Usage")
+    if not DEBUG:
+        info_icon_path = os.path.abspath(f"{PATH}/{image_to_show}")
+        indicator.set_icon_full(info_icon_path, "GPU Usage")
 
     # Update old_image_to_show
     old_image_to_show = image_to_show
@@ -85,6 +88,7 @@ def build_menu():
     global gpu_memory_used_item
     global gpu_memory_free_item
     global gpu_memory_total_item
+    global gpu_process_items
 
     menu = gtk.Menu()
 
@@ -94,6 +98,7 @@ def build_menu():
     gpu_memory_used_item = list(range(device_count))
     gpu_memory_free_item = list(range(device_count))
     gpu_memory_total_item = list(range(device_count))
+    gpu_process_items = list(range(device_count))
 
     for i in range(device_count):
         gpu_temp_item[i] = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
@@ -108,8 +113,19 @@ def build_menu():
         gpu_memory_total_item[i] = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
         menu.append(gpu_memory_total_item[i])
 
-        horizontal_separator = gtk.SeparatorMenuItem()
-        menu.append(horizontal_separator)
+        horizontal_separator1 = gtk.SeparatorMenuItem()
+        menu.append(horizontal_separator1)
+
+        process_sub_menu = gtk.Menu()
+        for proc in gpu_info[i]['processes']:
+            proc_item = gtk.MenuItem(label=f"PID {proc['pid']}: {proc['name']} using {proc['used_memory'] / 1024**2:.2f} MB")
+            process_sub_menu.append(proc_item)
+        gpu_process_items[i] = gtk.MenuItem(label=f"Processes GPU {i}")
+        gpu_process_items[i].set_submenu(process_sub_menu)
+        menu.append(gpu_process_items[i])
+
+        horizontal_separator2 = gtk.SeparatorMenuItem()
+        menu.append(horizontal_separator2)
 
     item_repo = gtk.MenuItem(label='Repository')
     item_repo.connect('activate', open_repo_link)
@@ -179,6 +195,7 @@ def get_gpu_info():
         gpu_info[i]["memory_total"] = memory_total
         gpu_info[i]["memory_free"] = memory_free
         gpu_info[i]["temp"] = temp
+        gpu_info[i]['processes'] = get_gpu_processes(handle)
 
         # Create list with memory info
         labels = 'Used', 'Free'
@@ -215,47 +232,52 @@ def get_gpu_info():
         plt.tight_layout()
 
         # Save pie chart
-        plt.savefig(f"{PATH}/gpu_chart_{i}.png", transparent=True)
+        if not DEBUG: plt.savefig(f"{PATH}/gpu_chart_{i}.png", transparent=True)
         plt.close(fig)
 
         # Load pie chart as PIL image
-        gpu_chart = Image.open(f'{PATH}/gpu_chart_{i}.png')
+        if not DEBUG: gpu_chart = Image.open(f'{PATH}/gpu_chart_{i}.png')
 
         # Resize chart
-        chart_icon_relation = gpu_chart.width / gpu_chart.height
-        chart_icon_width = int(ICON_HEIGHT * chart_icon_relation)
-        scaled_gpu_chart = gpu_chart.resize((chart_icon_width, ICON_HEIGHT), Image.LANCZOS)
+        if not DEBUG:
+            chart_icon_relation = gpu_chart.width / gpu_chart.height
+            chart_icon_width = int(ICON_HEIGHT * chart_icon_relation)
+            scaled_gpu_chart = gpu_chart.resize((chart_icon_width, ICON_HEIGHT), Image.LANCZOS)
 
         # New image with GPU info, GPU number and GPU chart
-        i_str = str(f" GPU {i}({temp}ºC)")
-        i_str_width = len(i_str) * FONT_WIDTH_FACTOR
-        total_width = scaled_gpu_info.width + i_str_width + scaled_gpu_chart.width
-        combined_image = Image.new('RGBA', (total_width, ICON_HEIGHT + PADDING), (0, 0, 0, 0))  # Transparent background
+        if not DEBUG:
+            i_str = str(f" GPU {i}({temp}ºC)")
+            i_str_width = len(i_str) * FONT_WIDTH_FACTOR
+            total_width = scaled_gpu_info.width + i_str_width + scaled_gpu_chart.width
+            combined_image = Image.new('RGBA', (total_width, ICON_HEIGHT + PADDING), (0, 0, 0, 0))  # Transparent background
 
         # Combine GPU info and GPU chart
-        gpu_info_position = (0, int(PADDING/2))
-        combined_image.paste(scaled_gpu_info, gpu_info_position)
-        chart_position = (scaled_gpu_info.width + i_str_width, int(PADDING/2))
-        combined_image.paste(scaled_gpu_chart, chart_position, scaled_gpu_chart)
+        if not DEBUG:
+            gpu_info_position = (0, int(PADDING/2))
+            combined_image.paste(scaled_gpu_info, gpu_info_position)
+            chart_position = (scaled_gpu_info.width + i_str_width, int(PADDING/2))
+            combined_image.paste(scaled_gpu_chart, chart_position, scaled_gpu_chart)
 
         # Create font object
-        draw = ImageDraw.Draw(combined_image)
-        font_size = int(ICON_HEIGHT * FONT_SIZE_FACTOR)
-        font = ImageFont.truetype(FONT_PATH, font_size)
+        if not DEBUG:
+            draw = ImageDraw.Draw(combined_image)
+            font_size = int(ICON_HEIGHT * FONT_SIZE_FACTOR)
+            font = ImageFont.truetype(FONT_PATH, font_size)
 
         # Get position of text
-        text_position = (scaled_gpu_info.width, int((ICON_HEIGHT + PADDING - font_size) / 2))
+        if not DEBUG: text_position = (scaled_gpu_info.width, int((ICON_HEIGHT + PADDING - font_size) / 2))
 
         # Draw text
-        draw.text(text_position, i_str, font=font, fill=WHITE_COLOR)
+        if not DEBUG: draw.text(text_position, i_str, font=font, fill=WHITE_COLOR)
 
         # Update scaled_gpu_info. Asign to combined_image without padding
-        scaled_gpu_info = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
+        if not DEBUG: scaled_gpu_info = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
 
     # Save combined image
-    timestamp = int(time.time())
-    image_to_show = f'gpu_info_{timestamp}.png'
-    combined_image.save(f'{PATH}/{image_to_show}')
+    if not DEBUG:
+        timestamp = int(time.time())
+        if not DEBUG: image_to_show = f'gpu_info_{timestamp}.png'
+        combined_image.save(f'{PATH}/{image_to_show}')
 
     # Remove old image
     if os.path.exists(f'{PATH}/{old_image_to_show}'):
@@ -266,19 +288,33 @@ def get_gpu_info():
 
     return device_count, gpu_info
 
+def get_gpu_processes(handle):
+    processes = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
+    process_info = []
+    for proc in processes:
+        try:
+            process_name = pynvml.nvmlSystemGetProcessName(proc.pid)
+            process_info.append({'pid': proc.pid, 'name': process_name, 'used_memory': proc.usedGpuMemory})
+        except pynvml.NvmlException:
+            process_info.append({'pid': proc.pid, 'name': 'Unknown', 'used_memory': proc.usedGpuMemory})
+    return process_info
+
 if __name__ == "__main__":
     if not os.path.exists(ICON_PATH):
         print(f"Error: {ICON_PATH} not found")
         exit(1)
     
     # Remove all gpu_info_*.png files
-    for file in os.listdir(PATH):
-        if re.search(r'gpu_info_\d+.png', file):
-            os.remove(f'{PATH}/{file}')
+    if not DEBUG:
+        for file in os.listdir(PATH):
+            if re.search(r'gpu_info_\d+.png', file):
+                os.remove(f'{PATH}/{file}')
 
     # Find files with gpu_chart_*.png and delete them
-    for file in os.listdir(PATH):
-        if re.search(r'gpu_chart_\d+.png', file):
-            os.remove(f"{PATH}/{file}")
+    if not DEBUG:
+        for file in os.listdir(PATH):
+            if re.search(r'gpu_chart_\d+.png', file):
+                os.remove(f"{PATH}/{file}")
+    
     signal.signal(signal.SIGINT, signal.SIG_DFL) # Allow the program to be terminated with Ctrl+C
     main()
