@@ -45,7 +45,7 @@ gpu_temp_item = None
 gpu_memory_used_item = None
 gpu_memory_free_item = None
 gpu_memory_total_item = None
-gpu_process_items = None
+gpu_process_items_dict = None
 
 def main(debug = False):
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
@@ -88,7 +88,7 @@ def build_menu(debug = False):
     global gpu_memory_used_item
     global gpu_memory_free_item
     global gpu_memory_total_item
-    global gpu_process_items
+    global gpu_process_items_dict
 
     menu = gtk.Menu()
 
@@ -98,7 +98,7 @@ def build_menu(debug = False):
     gpu_memory_used_item = list(range(device_count))
     gpu_memory_free_item = list(range(device_count))
     gpu_memory_total_item = list(range(device_count))
-    gpu_process_items = list(range(device_count))
+    gpu_process_items_dict = {}
 
     for i in range(device_count):
         gpu_temp_item[i] = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
@@ -116,13 +116,12 @@ def build_menu(debug = False):
         horizontal_separator1 = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator1)
 
-        process_sub_menu = gtk.Menu()
+        gpu_number_i_process_items = []
         for proc in gpu_info[i]['processes']:
-            proc_item = gtk.MenuItem(label=f"PID {proc['pid']}: {proc['name']} using {proc['used_memory'] / 1024**2:.2f} MB")
-            process_sub_menu.append(proc_item)
-        gpu_process_items[i] = gtk.MenuItem(label=f"Processes GPU {i}")
-        gpu_process_items[i].set_submenu(process_sub_menu)
-        menu.append(gpu_process_items[i])
+            proc_item = gtk.MenuItem(label=f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
+            menu.append(proc_item)
+            gpu_number_i_process_items.append(proc_item)
+        gpu_process_items_dict[f"{i}"] = gpu_number_i_process_items
 
         horizontal_separator2 = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator2)
@@ -151,6 +150,11 @@ def update_menu(device_count, gpu_info):
         gpu_memory_used_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
         gpu_memory_free_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
         gpu_memory_total_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
+
+        j = 0
+        for proc in gpu_info[i]['processes']:
+            gpu_process_items_dict[f"{i}"][j].set_label(f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
+            j += 1
 
 def get_gpu_info(debug = False):
     global image_to_show
