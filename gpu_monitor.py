@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import re
 import time
+import argparse
 
 APPINDICATOR_ID = 'GPU_monitor'
-DEBUG = False
 
 BLUE_COLOR = '#66b3ff'
 RED_COLOR = '#ff6666'
@@ -47,25 +47,25 @@ gpu_memory_free_item = None
 gpu_memory_total_item = None
 gpu_process_items = None
 
-def main():
+def main(debug = False):
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
     GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-    GPU_indicator.set_menu(build_menu())
+    GPU_indicator.set_menu(build_menu(debug))
 
     # Update GPU info every second
-    GLib.timeout_add_seconds(1, update_gpu_info, GPU_indicator)
+    GLib.timeout_add_seconds(1, update_gpu_info, GPU_indicator, debug)
 
     GLib.MainLoop().run()
 
-def update_gpu_info(indicator):
+def update_gpu_info(indicator, debug = False):
     global image_to_show
     global old_image_to_show
 
     # Generate GPU info icon
-    device_count, gpu_info = get_gpu_info()
+    device_count, gpu_info = get_gpu_info(debug)
     
     # Update icon
-    if not DEBUG:
+    if not debug:
         info_icon_path = os.path.abspath(f"{PATH}/{image_to_show}")
         indicator.set_icon_full(info_icon_path, "GPU Usage")
 
@@ -83,7 +83,7 @@ def open_repo_link(_):
 def buy_me_a_coffe(_):
     webbrowser.open('https://www.buymeacoffee.com/maximofn')
 
-def build_menu():
+def build_menu(debug = False):
     global gpu_temp_item
     global gpu_memory_used_item
     global gpu_memory_free_item
@@ -92,7 +92,7 @@ def build_menu():
 
     menu = gtk.Menu()
 
-    device_count, gpu_info = get_gpu_info()
+    device_count, gpu_info = get_gpu_info(debug)
 
     gpu_temp_item = list(range(device_count))
     gpu_memory_used_item = list(range(device_count))
@@ -152,7 +152,7 @@ def update_menu(device_count, gpu_info):
         gpu_memory_free_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
         gpu_memory_total_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
 
-def get_gpu_info():
+def get_gpu_info(debug = False):
     global image_to_show
     global old_image_to_show
 
@@ -232,51 +232,51 @@ def get_gpu_info():
         plt.tight_layout()
 
         # Save pie chart
-        if not DEBUG: plt.savefig(f"{PATH}/gpu_chart_{i}.png", transparent=True)
+        if not debug: plt.savefig(f"{PATH}/gpu_chart_{i}.png", transparent=True)
         plt.close(fig)
 
         # Load pie chart as PIL image
-        if not DEBUG: gpu_chart = Image.open(f'{PATH}/gpu_chart_{i}.png')
+        if not debug: gpu_chart = Image.open(f'{PATH}/gpu_chart_{i}.png')
 
         # Resize chart
-        if not DEBUG:
+        if not debug:
             chart_icon_relation = gpu_chart.width / gpu_chart.height
             chart_icon_width = int(ICON_HEIGHT * chart_icon_relation)
             scaled_gpu_chart = gpu_chart.resize((chart_icon_width, ICON_HEIGHT), Image.LANCZOS)
 
         # New image with GPU info, GPU number and GPU chart
-        if not DEBUG:
+        if not debug:
             i_str = str(f" GPU {i}({temp}ºC)")
             i_str_width = len(i_str) * FONT_WIDTH_FACTOR
             total_width = scaled_gpu_info.width + i_str_width + scaled_gpu_chart.width
             combined_image = Image.new('RGBA', (total_width, ICON_HEIGHT + PADDING), (0, 0, 0, 0))  # Transparent background
 
         # Combine GPU info and GPU chart
-        if not DEBUG:
+        if not debug:
             gpu_info_position = (0, int(PADDING/2))
             combined_image.paste(scaled_gpu_info, gpu_info_position)
             chart_position = (scaled_gpu_info.width + i_str_width, int(PADDING/2))
             combined_image.paste(scaled_gpu_chart, chart_position, scaled_gpu_chart)
 
         # Create font object
-        if not DEBUG:
+        if not debug:
             draw = ImageDraw.Draw(combined_image)
             font_size = int(ICON_HEIGHT * FONT_SIZE_FACTOR)
             font = ImageFont.truetype(FONT_PATH, font_size)
 
         # Get position of text
-        if not DEBUG: text_position = (scaled_gpu_info.width, int((ICON_HEIGHT + PADDING - font_size) / 2))
+        if not debug: text_position = (scaled_gpu_info.width, int((ICON_HEIGHT + PADDING - font_size) / 2))
 
         # Draw text
-        if not DEBUG: draw.text(text_position, i_str, font=font, fill=WHITE_COLOR)
+        if not debug: draw.text(text_position, i_str, font=font, fill=WHITE_COLOR)
 
         # Update scaled_gpu_info. Asign to combined_image without padding
-        if not DEBUG: scaled_gpu_info = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
+        if not debug: scaled_gpu_info = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
 
     # Save combined image
-    if not DEBUG:
+    if not debug:
         timestamp = int(time.time())
-        if not DEBUG: image_to_show = f'gpu_info_{timestamp}.png'
+        if not debug: image_to_show = f'gpu_info_{timestamp}.png'
         combined_image.save(f'{PATH}/{image_to_show}')
 
     # Remove old image
@@ -300,21 +300,26 @@ def get_gpu_processes(handle):
     return process_info
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='GPU Monitor')
+    parser.add_argument('--debug', action='store_true', help='Debug mode')
+    args = parser.parse_args()
+    debug = args.debug
+
     if not os.path.exists(ICON_PATH):
         print(f"Error: {ICON_PATH} not found")
         exit(1)
     
     # Remove all gpu_info_*.png files
-    if not DEBUG:
+    if not debug:
         for file in os.listdir(PATH):
             if re.search(r'gpu_info_\d+.png', file):
                 os.remove(f'{PATH}/{file}')
 
     # Find files with gpu_chart_*.png and delete them
-    if not DEBUG:
+    if not debug:
         for file in os.listdir(PATH):
             if re.search(r'gpu_chart_\d+.png', file):
                 os.remove(f"{PATH}/{file}")
     
     signal.signal(signal.SIGINT, signal.SIG_DFL) # Allow the program to be terminated with Ctrl+C
-    main()
+    main(debug)
