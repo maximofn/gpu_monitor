@@ -313,7 +313,7 @@ def get_gpu_processes(handle, gpu_number):
                     command = match.group(6)
                     process_info.append({'pid': pid, 'name': command.strip(), 'used_memory': int(mem_used) * 1024 * 1024})  # Convert MB to bytes
         except subprocess.CalledProcessError as e:
-            print(f"Error al ejecutar nvidia-smi: {e}")
+            print(f"Error executing nvidia-smi: {e}")
             process_info.append({'pid': 'Error', 'name': 'nvidia-smi failed', 'used_memory': 0})
     else:
         for proc in processes:
