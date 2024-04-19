@@ -47,6 +47,7 @@ gpu_memory_used_item = None
 gpu_memory_free_item = None
 gpu_memory_total_item = None
 gpu_process_items_dict = None
+actual_time = None
 
 def main(debug = False):
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
@@ -90,6 +91,7 @@ def build_menu(debug = False):
     global gpu_memory_free_item
     global gpu_memory_total_item
     global gpu_process_items_dict
+    global actual_time
 
     menu = gtk.Menu()
 
@@ -127,6 +129,12 @@ def build_menu(debug = False):
         horizontal_separator2 = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator2)
 
+    actual_time = gtk.MenuItem(label=time.strftime("%H:%M:%S"))
+    menu.append(actual_time)
+
+    horizontal_separator3 = gtk.SeparatorMenuItem()
+    menu.append(horizontal_separator3)
+    
     item_repo = gtk.MenuItem(label='Repository')
     item_repo.connect('activate', open_repo_link)
     menu.append(item_repo)
@@ -135,8 +143,8 @@ def build_menu(debug = False):
     item_buy_me_a_coffe.connect('activate', buy_me_a_coffe)
     menu.append(item_buy_me_a_coffe)
 
-    horizontal_separator = gtk.SeparatorMenuItem()
-    menu.append(horizontal_separator)
+    horizontal_separator4 = gtk.SeparatorMenuItem()
+    menu.append(horizontal_separator4)
 
     item_quit = gtk.MenuItem(label='Quit')
     item_quit.connect('activate', quit)
@@ -151,6 +159,7 @@ def update_menu(device_count, gpu_info):
         gpu_memory_used_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
         gpu_memory_free_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
         gpu_memory_total_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
+        actual_time.set_label(time.strftime("%H:%M:%S"))
 
         j = 0
         for proc in gpu_info[i]['processes']:
