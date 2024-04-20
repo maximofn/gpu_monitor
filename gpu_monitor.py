@@ -42,6 +42,7 @@ FONT_WIDTH_FACTOR = 8
 image_to_show = None
 old_image_to_show = None
 
+GPU_indicator = None
 gpu_temp_item = None
 gpu_memory_used_item = None
 gpu_memory_free_item = None
@@ -50,6 +51,8 @@ gpu_process_items_dict = None
 actual_time = None
 
 def main(debug = False):
+    global GPU_indicator
+
     GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
     GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
     GPU_indicator.set_menu(build_menu(debug))
@@ -154,6 +157,9 @@ def build_menu(debug = False):
     return menu
 
 def update_menu(device_count, gpu_info):
+    global gpu_process_items_dict
+    global GPU_indicator
+    
     for i in range(device_count):
         gpu_temp_item[i].set_label(f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
         gpu_memory_used_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
@@ -161,10 +167,15 @@ def update_menu(device_count, gpu_info):
         gpu_memory_total_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
         actual_time.set_label(time.strftime("%H:%M:%S"))
 
-        j = 0
-        for proc in gpu_info[i]['processes']:
-            gpu_process_items_dict[f"{i}"][j].set_label(f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
-            j += 1
+        number_of_processes = len(gpu_info[i]['processes'])
+        len_processes_in_menu = len(gpu_process_items_dict[f'{i}'])
+
+        if number_of_processes != len_processes_in_menu:
+            GPU_indicator.set_menu(build_menu(debug))
+
+        else:
+            for (j, proc) in enumerate(gpu_info[i]['processes']):
+                gpu_process_items_dict[f"{i}"][j].set_label(f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
 
 def get_gpu_info(debug = False):
     global image_to_show
