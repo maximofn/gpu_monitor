@@ -36,8 +36,8 @@ GPU_ICON = Image.open(ICON_PATH)
 ICON_HEIGHT = 22
 PADDING = 10
 
-FONT_SIZE_FACTOR = 0.65
-FONT_WIDTH_FACTOR = 8
+FONT_SIZE_FACTOR = 0.50
+FONT_WIDTH_FACTOR = 7
 
 image_to_show = None
 old_image_to_show = None
