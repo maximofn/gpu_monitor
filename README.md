@@ -2,7 +2,7 @@
 
 🖥️ GPU Monitor for Ubuntu: The Ultimate Real-Time GPU Tracking Tool. Monitor your GPU's performance, temperature, and memory usage directly from your Ubuntu menu bar with GPU Monitor. This user-friendly and efficient application supports multiple GPUs and is fully integrated with the latest Ubuntu operating system. Get live updates and optimize your gaming or development tasks. Download now and take control of your GPU's health today!
 
-![gpu monitor](https://maximofn.com/wp-content/uploads/2023/11/gpu_monitor.png)
+![gpu monitor](gpu_monitor.gif)
 
 ## About GPU Monitor
 GPU Monitor is an intuitive tool designed for developers, gamers, and professionals who need to keep an eye on their graphics card's performance and health in real time. It integrates seamlessly with the Ubuntu menu bar, providing essential information at your fingertips.
@@ -50,25 +50,9 @@ pip3 install pynvml
 
 ## Execution at start-up
 
-Opens the application menu
-
-![application menu](https://maximofn.com/wp-content/uploads/2023/11/applications_menu.png)
-
-Type "start"
-
-![start](https://maximofn.com/wp-content/uploads/2023/11/applications_at_startup.png)
-
-Click on "Startup Applications"
-
-![startup applications](https://maximofn.com/wp-content/uploads/2023/11/startup-application.webp)
-
-Select "Add" and write the following:
-
- * Name: GPU Monitor
- * Command: /usr/bin/python3 path_of_script/gpu_monitor.py
- * Comment: GPU Monitor
-
-And click on "Add"
+```bash
+gpu_monitor.sh
+```
 
 ## Support
 
