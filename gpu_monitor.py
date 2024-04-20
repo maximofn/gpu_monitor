@@ -305,19 +305,20 @@ def get_gpu_info(debug = False):
 def get_gpu_processes(handle, gpu_number):
     processes = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
     process_info = []
-    if len(processes) == 0:
+    # if len(processes) == 0:
+    if True:
         try:
             nvidia_smi_output = subprocess.check_output(['nvidia-smi', 'pmon', '-c', '1', '-s', 'm'], encoding='utf-8')
             lines = nvidia_smi_output.strip().split('\n')
             for line in lines:
                 # La expresión regular coincide con las líneas que tienen datos de procesos
-                match = re.search(r'^\s*(\d+)\s+(\d+)\s+(\w)\s+(\d+)\s+(\d+)\s+(.*)$', line)
+                match = re.search(r'^\s*(\d+)\s+(\d+)\s+(\w+[+]*\w*)\s+(\d+)\s+(\d+)\s+(.*)$', line)
                 if match:
                     gpu_id = match.group(1)
                     if int(gpu_id) != gpu_number:
                         continue
                     pid = match.group(2)
-                    type = match.group(3)
+                    # type = match.group(3)
                     mem_used = match.group(4)  # Memoria usada en MB
                     command = match.group(6)
                     process_info.append({'pid': pid, 'name': command.strip(), 'used_memory': int(mem_used) * 1024 * 1024})  # Convert MB to bytes
