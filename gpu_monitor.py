@@ -28,10 +28,10 @@ PERCENTAGE_WARNING2 = 80
 PERCENTAGE_CAUTION = 90
 
 PATH = os.path.dirname(os.path.realpath(__file__))
-ICON_PATH = os.path.abspath(f"{PATH}/tarjeta-de-video.png")
+GPU_ICON_PATH = os.path.abspath(f"{PATH}/tarjeta-de-video.png")
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
-GPU_ICON = Image.open(ICON_PATH)
+GPU_ICON = Image.open(GPU_ICON_PATH)
 
 ICON_HEIGHT = 22
 PADDING = 10
@@ -42,23 +42,23 @@ FONT_WIDTH_FACTOR = 7
 image_to_show = None
 old_image_to_show = None
 
-GPU_indicator = None
-gpu_temp_item = None
-gpu_memory_used_item = None
-gpu_memory_free_item = None
-gpu_memory_total_item = None
-gpu_process_items_dict = None
+GUI_GPU_indicator = None
+GPU_temperature_menu_item = None
+GPU_memory_used_menu_item = None
+GPU_memory_free_menu_item = None
+GPU_memory_total_menu_item = None
+GPU_process_menu_items = None
 actual_time = None
 
 def main(debug = False):
-    global GPU_indicator
+    global GUI_GPU_indicator
 
-    GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
-    GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-    GPU_indicator.set_menu(build_menu(debug))
+    GUI_GPU_indicator = AppIndicator3.Indicator.new(APPINDICATOR_ID, GPU_ICON_PATH, AppIndicator3.IndicatorCategory.SYSTEM_SERVICES)
+    GUI_GPU_indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+    GUI_GPU_indicator.set_menu(build_menu(debug))
 
     # Update GPU info every second
-    GLib.timeout_add_seconds(1, update_gpu_info, GPU_indicator, debug)
+    GLib.timeout_add_seconds(1, update_gpu_info, GUI_GPU_indicator, debug)
 
     GLib.MainLoop().run()
 
@@ -89,35 +89,35 @@ def buy_me_a_coffe(_):
     webbrowser.open('https://www.buymeacoffee.com/maximofn')
 
 def build_menu(debug = False):
-    global gpu_temp_item
-    global gpu_memory_used_item
-    global gpu_memory_free_item
-    global gpu_memory_total_item
-    global gpu_process_items_dict
+    global GPU_temperature_menu_item
+    global GPU_memory_used_menu_item
+    global GPU_memory_free_menu_item
+    global GPU_memory_total_menu_item
+    global GPU_process_menu_items
     global actual_time
 
     menu = gtk.Menu()
 
     device_count, gpu_info = get_gpu_info(debug)
 
-    gpu_temp_item = list(range(device_count))
-    gpu_memory_used_item = list(range(device_count))
-    gpu_memory_free_item = list(range(device_count))
-    gpu_memory_total_item = list(range(device_count))
-    gpu_process_items_dict = {}
+    GPU_temperature_menu_item = list(range(device_count))
+    GPU_memory_used_menu_item = list(range(device_count))
+    GPU_memory_free_menu_item = list(range(device_count))
+    GPU_memory_total_menu_item = list(range(device_count))
+    GPU_process_menu_items = {}
 
     for i in range(device_count):
-        gpu_temp_item[i] = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
-        menu.append(gpu_temp_item[i])
+        GPU_temperature_menu_item[i] = gtk.MenuItem(label=f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
+        menu.append(GPU_temperature_menu_item[i])
 
-        gpu_memory_used_item[i] = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
-        menu.append(gpu_memory_used_item[i])
+        GPU_memory_used_menu_item[i] = gtk.MenuItem(label=f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
+        menu.append(GPU_memory_used_menu_item[i])
 
-        gpu_memory_free_item[i] = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
-        menu.append(gpu_memory_free_item[i])
+        GPU_memory_free_menu_item[i] = gtk.MenuItem(label=f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
+        menu.append(GPU_memory_free_menu_item[i])
 
-        gpu_memory_total_item[i] = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
-        menu.append(gpu_memory_total_item[i])
+        GPU_memory_total_menu_item[i] = gtk.MenuItem(label=f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
+        menu.append(GPU_memory_total_menu_item[i])
 
         horizontal_separator1 = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator1)
@@ -127,7 +127,7 @@ def build_menu(debug = False):
             proc_item = gtk.MenuItem(label=f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
             menu.append(proc_item)
             gpu_number_i_process_items.append(proc_item)
-        gpu_process_items_dict[f"{i}"] = gpu_number_i_process_items
+        GPU_process_menu_items[f"{i}"] = gpu_number_i_process_items
 
         horizontal_separator2 = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator2)
@@ -157,25 +157,25 @@ def build_menu(debug = False):
     return menu
 
 def update_menu(device_count, gpu_info):
-    global gpu_process_items_dict
-    global GPU_indicator
+    global GPU_process_menu_items
+    global GUI_GPU_indicator
     
     for i in range(device_count):
-        gpu_temp_item[i].set_label(f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
-        gpu_memory_used_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
-        gpu_memory_free_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
-        gpu_memory_total_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
+        GPU_temperature_menu_item[i].set_label(f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
+        GPU_memory_used_menu_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
+        GPU_memory_free_menu_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
+        GPU_memory_total_menu_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
         actual_time.set_label(time.strftime("%H:%M:%S"))
 
         number_of_processes = len(gpu_info[i]['processes'])
-        len_processes_in_menu = len(gpu_process_items_dict[f'{i}'])
+        len_processes_in_menu = len(GPU_process_menu_items[f'{i}'])
 
         if number_of_processes != len_processes_in_menu:
-            GPU_indicator.set_menu(build_menu(debug))
+            GUI_GPU_indicator.set_menu(build_menu(debug))
 
         else:
             for (j, proc) in enumerate(gpu_info[i]['processes']):
-                gpu_process_items_dict[f"{i}"][j].set_label(f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
+                GPU_process_menu_items[f"{i}"][j].set_label(f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
 
 def get_gpu_info(debug = False):
     global image_to_show
@@ -351,8 +351,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     debug = args.debug
 
-    if not os.path.exists(ICON_PATH):
-        print(f"Error: {ICON_PATH} not found")
+    if not os.path.exists(GPU_ICON_PATH):
+        print(f"Error: {GPU_ICON_PATH} not found")
         exit(1)
     
     # Remove all gpu_info_*.png files
