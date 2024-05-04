@@ -161,18 +161,24 @@ def update_menu(device_count, gpu_info):
     global GUI_GPU_indicator
     
     for i in range(device_count):
+        # Update memory info for this GPU
         GPU_temperature_menu_item[i].set_label(f"GPU {i} Temp: {gpu_info[i]['temp']}ºC")
         GPU_memory_used_menu_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
         GPU_memory_free_menu_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
         GPU_memory_total_menu_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
+
+        # Update actual time menu item
         actual_time_menu_item.set_label(time.strftime("%H:%M:%S"))
 
+        # Get number of processes in this GPU
         number_of_processes = len(gpu_info[i]['processes'])
         len_processes_in_menu = len(GPU_process_menu_items[f'{i}'])
 
+        # If the number of processes has changed, build the menu again
         if number_of_processes != len_processes_in_menu:
             GUI_GPU_indicator.set_menu(build_menu(debug))
 
+        # If the number of processes is the same, update the menu items
         else:
             for (j, proc) in enumerate(gpu_info[i]['processes']):
                 GPU_process_menu_items[f"{i}"][j].set_label(f"GPU {i} - PID {proc['pid']} ({proc['used_memory'] / 1024**2:.2f} MB):\t{proc['name']}")
