@@ -226,7 +226,7 @@ def get_gpu_info(debug = False):
         gpu_info[i]["memory_total"] = memory_total
         gpu_info[i]["memory_free"] = memory_free
         gpu_info[i]["temp"] = temp
-        gpu_info[i]['processes'] = get_gpu_processes(handle, i)
+        gpu_info[i]['processes'] = get_gpu_processes(i)
 
         # Get memory usage to create pie chart
         memory_labels = 'Used', 'Free'
@@ -328,36 +328,27 @@ def get_gpu_info(debug = False):
 
     return device_count, gpu_info
 
-def get_gpu_processes(handle, gpu_number):
-    processes = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
+def get_gpu_processes(gpu_number):
     process_info = []
-    # if len(processes) == 0:
-    if True:
-        try:
-            nvidia_smi_output = subprocess.check_output(['nvidia-smi', 'pmon', '-c', '1', '-s', 'm'], encoding='utf-8')
-            lines = nvidia_smi_output.strip().split('\n')
-            for line in lines:
-                # La expresión regular coincide con las líneas que tienen datos de procesos
-                match = re.search(r'^\s*(\d+)\s+(\d+)\s+(\w+[+]*\w*)\s+(\d+)\s+(\d+)\s+(.*)$', line)
-                if match:
-                    gpu_id = match.group(1)
-                    if int(gpu_id) != gpu_number:
-                        continue
-                    pid = match.group(2)
-                    # type = match.group(3)
-                    mem_used = match.group(4)  # Memoria usada en MB
-                    command = match.group(6)
-                    process_info.append({'pid': pid, 'name': command.strip(), 'used_memory': int(mem_used) * 1024 * 1024})  # Convert MB to bytes
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing nvidia-smi: {e}")
-            process_info.append({'pid': 'Error', 'name': 'nvidia-smi failed', 'used_memory': 0})
-    else:
-        for proc in processes:
-            try:
-                process_name = pynvml.nvmlSystemGetProcessName(proc.pid)
-                process_info.append({'pid': proc.pid, 'name': process_name, 'used_memory': proc.usedGpuMemory})
-            except pynvml.NvmlException:
-                process_info.append({'pid': proc.pid, 'name': 'Unknown', 'used_memory': proc.usedGpuMemory})
+    try:
+        nvidia_smi_output = subprocess.check_output(['nvidia-smi', 'pmon', '-c', '1', '-s', 'm'], encoding='utf-8')
+        lines = nvidia_smi_output.strip().split('\n')
+        for line in lines:
+            # Check if the line has the format: GPU PID Type Process ID Memory Usage
+            match = re.search(r'^\s*(\d+)\s+(\d+)\s+(\w+[+]*\w*)\s+(\d+)\s+(\d+)\s+(.*)$', line)
+            if match:
+                gpu_id = match.group(1)
+                if int(gpu_id) != gpu_number:
+                    continue
+                pid = match.group(2)
+                # type = match.group(3)
+                memory_used = match.group(4)  # Memoria usada en MB
+                command = match.group(6)
+                process_info.append({'pid': pid, 'name': command.strip(), 'used_memory': int(memory_used) * 1024 * 1024})  # Convert MB to bytes
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing nvidia-smi: {e}")
+        process_info.append({'pid': 'Error', 'name': 'nvidia-smi failed', 'used_memory': 0})
+
     return process_info
 
 if __name__ == "__main__":
