@@ -48,7 +48,7 @@ GPU_memory_used_menu_item = None
 GPU_memory_free_menu_item = None
 GPU_memory_total_menu_item = None
 GPU_process_menu_items = None
-actual_time = None
+actual_time_menu_item = None
 
 def main(debug = False):
     global GUI_GPU_indicator
@@ -94,7 +94,7 @@ def build_menu(debug = False):
     global GPU_memory_free_menu_item
     global GPU_memory_total_menu_item
     global GPU_process_menu_items
-    global actual_time
+    global actual_time_menu_item
 
     menu = gtk.Menu()
 
@@ -132,8 +132,8 @@ def build_menu(debug = False):
         horizontal_separator2 = gtk.SeparatorMenuItem()
         menu.append(horizontal_separator2)
 
-    actual_time = gtk.MenuItem(label=time.strftime("%H:%M:%S"))
-    menu.append(actual_time)
+    actual_time_menu_item = gtk.MenuItem(label=time.strftime("%H:%M:%S"))
+    menu.append(actual_time_menu_item)
 
     horizontal_separator3 = gtk.SeparatorMenuItem()
     menu.append(horizontal_separator3)
@@ -165,7 +165,7 @@ def update_menu(device_count, gpu_info):
         GPU_memory_used_menu_item[i].set_label(f"GPU {i} Memory used {gpu_info[i]['memory_used']:.2f} MB")
         GPU_memory_free_menu_item[i].set_label(f"GPU {i} Memory free {gpu_info[i]['memory_total'] - gpu_info[i]['memory_used']:.2f} MB")
         GPU_memory_total_menu_item[i].set_label(f"GPU {i} Memory total {gpu_info[i]['memory_total']:.2f} MB")
-        actual_time.set_label(time.strftime("%H:%M:%S"))
+        actual_time_menu_item.set_label(time.strftime("%H:%M:%S"))
 
         number_of_processes = len(gpu_info[i]['processes'])
         len_processes_in_menu = len(GPU_process_menu_items[f'{i}'])
