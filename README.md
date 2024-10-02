@@ -51,8 +51,10 @@ pip3 install pynvml
 ## Execution at start-up
 
 ```bash
-gpu_monitor.sh
+add_to_startup.sh
 ```
+
+Then when you restart your computer, the GPU Monitor will start automatically.
 
 ## Support
 
