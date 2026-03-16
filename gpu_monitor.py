@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-import signal
-import gi
-gi.require_version('AppIndicator3', '0.1')
-from gi.repository import AppIndicator3, GLib
-from gi.repository import Gtk as gtk
-import os
-import pynvml
-import webbrowser
-import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw, ImageFont
-import re
-import time
 import argparse
+import os
+import re
+import signal
 import subprocess
+import sys
+import time
+import webbrowser
+
 import io
+import pynvml
+from PIL import Image, ImageDraw, ImageFont
 
 APPINDICATOR_ID = 'GPU_monitor'
 
@@ -32,8 +29,6 @@ PATH = os.path.dirname(os.path.realpath(__file__))
 GPU_ICON_PATH = os.path.abspath(f"{PATH}/tarjeta-de-video.png")
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
-GPU_ICON = Image.open(GPU_ICON_PATH)
-
 ICON_HEIGHT = 22
 PADDING = 10
 
@@ -50,6 +45,60 @@ GPU_memory_free_menu_item = None
 GPU_memory_total_menu_item = None
 GPU_process_menu_items = None
 actual_time_menu_item = None
+AppIndicator3 = None
+GLib = None
+gtk = None
+plt = None
+
+
+def has_graphical_session():
+    return any(os.environ.get(variable) for variable in ('DISPLAY', 'WAYLAND_DISPLAY'))
+
+
+def load_gui_dependencies():
+    global AppIndicator3
+    global GLib
+    global gtk
+    global plt
+
+    import gi
+    import matplotlib.pyplot as pyplot
+
+    gi.require_version('AppIndicator3', '0.1')
+    from gi.repository import AppIndicator3 as appindicator3
+    from gi.repository import GLib as glib
+    from gi.repository import Gtk as gtk_module
+
+    AppIndicator3 = appindicator3
+    GLib = glib
+    gtk = gtk_module
+    plt = pyplot
+
+
+def print_debug_gpu_info():
+    try:
+        device_count, gpu_info = get_gpu_info(debug=True)
+    except pynvml.NVMLError as error:
+        print(f'Unable to read NVIDIA GPU info: {error}', file=sys.stderr)
+        return
+
+    if device_count == 0:
+        print('No NVIDIA GPUs detected.')
+        return
+
+    print(f'GPUs detected: {device_count}')
+    for i in range(device_count):
+        gpu = gpu_info[i]
+        print(
+            f"GPU {i}: {gpu['temp']}ºC, used {gpu['memory_used']:.2f} MB, "
+            f"free {gpu['memory_free']:.2f} MB, total {gpu['memory_total']:.2f} MB"
+        )
+
+        for proc in gpu['processes']:
+            print(
+                f"GPU {i} PID {proc['pid']}: {proc['name']} "
+                f"({proc['used_memory'] / 1024**2:.2f} MB)"
+            )
 
 def main(debug = False):
     global GUI_GPU_indicator
@@ -197,10 +246,11 @@ def get_gpu_info(debug = False):
     # List to store GPU info
     gpu_info = list(range(device_count))
 
-    # Resize GPU icon
-    gpu_icon_relation = GPU_ICON.width / GPU_ICON.height
-    gpu_icon_width = int(ICON_HEIGHT * gpu_icon_relation)
-    scaled_gpu_icon = GPU_ICON.resize((gpu_icon_width, ICON_HEIGHT), Image.LANCZOS)
+    if not debug:
+        gpu_icon = Image.open(GPU_ICON_PATH)
+        gpu_icon_relation = gpu_icon.width / gpu_icon.height
+        gpu_icon_width = int(ICON_HEIGHT * gpu_icon_relation)
+        scaled_gpu_icon = gpu_icon.resize((gpu_icon_width, ICON_HEIGHT), Image.LANCZOS)
 
     # Build menu items for each GPU
     for i in range(device_count):
@@ -227,6 +277,9 @@ def get_gpu_info(debug = False):
         gpu_info[i]["memory_free"] = memory_free
         gpu_info[i]["temp"] = temp
         gpu_info[i]['processes'] = get_gpu_processes(i)
+
+        if debug:
+            continue
 
         # Get memory usage to create pie chart
         memory_labels = 'Used', 'Free'
@@ -314,9 +367,9 @@ def get_gpu_info(debug = False):
         if not debug: scaled_gpu_icon = combined_image.crop((0, PADDING/2, total_width, ICON_HEIGHT + PADDING/2))
 
     # Save combined image
-    if not debug:
+    if not debug and device_count > 0:
         timestamp = int(time.time())
-        if not debug: image_to_show = f'gpu_info_{timestamp}.png'
+        image_to_show = f'gpu_info_{timestamp}.png'
         combined_image.save(f'{PATH}/{image_to_show}')
 
     # Remove old image
@@ -345,6 +398,8 @@ def get_gpu_processes(gpu_number):
                 memory_used = match.group(4)  # Memoria usada en MB
                 command = match.group(6)
                 process_info.append({'pid': pid, 'name': command.strip(), 'used_memory': int(memory_used) * 1024 * 1024})  # Convert MB to bytes
+    except FileNotFoundError:
+        process_info.append({'pid': 'Error', 'name': 'nvidia-smi not found', 'used_memory': 0})
     except subprocess.CalledProcessError as e:
         print(f"Error executing nvidia-smi: {e}")
         process_info.append({'pid': 'Error', 'name': 'nvidia-smi failed', 'used_memory': 0})
@@ -357,9 +412,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     debug = args.debug
 
+    if not has_graphical_session():
+        if debug:
+            print_debug_gpu_info()
+            sys.exit(0)
+
+        print(
+            'No graphical session detected. Set DISPLAY or WAYLAND_DISPLAY before running gpu_monitor.py, or use --debug for console output.',
+            file=sys.stderr,
+        )
+        sys.exit(0)
+
+    load_gui_dependencies()
+
     if not os.path.exists(GPU_ICON_PATH):
-        print(f"Error: {GPU_ICON_PATH} not found")
-        exit(1)
+        print(f"Error: {GPU_ICON_PATH} not found", file=sys.stderr)
+        sys.exit(1)
     
     # Remove all gpu_info_*.png files
     if not debug:
