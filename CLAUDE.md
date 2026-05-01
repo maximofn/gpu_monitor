@@ -74,7 +74,7 @@ Si alguien "limpia" esto sustituyéndolo por `icon_pixmap()` se rompe visualment
 
 Las dos están testeadas. Si añades una nueva ruta de salida, comprueba qué espacio de alpha espera el consumidor antes de mandarle bytes.
 
-Texto: `ab_glyph` con DejaVu Sans Mono **Bold** (Regular se ve borroso a 12 px sin hinting). El coverage del rasterizado se eleva con `coverage.sqrt()` (gamma 2.0) antes de mezclar — sin esto los strokes finos quedan en alpha ~50 y el texto es ilegible. La fuente se busca en una lista de paths candidatos en `DEFAULT_FONT_PATHS`; si falta, requiere `fonts-dejavu-core`.
+Texto: `fontdue` con DejaVu Sans Mono **Regular** y tamaño `0.50 * h` (mismo perfil que el tray Python con PIL/freetype). `fontdue` aplica hinting TrueType, que es lo que mantiene los strokes finos pixel-aligned y nítidos a 11 px. Versiones previas usaban `ab_glyph` (sin hinting) con Bold + gamma `coverage.sqrt()` para compensar; el resultado era texto gordo y borroso comparado con el Python original. Si vuelves a `ab_glyph` o desactivas hinting, el texto pierde definición — verifícalo con `--dump-icon` antes de mergear. La fuente se busca en una lista de paths candidatos en `DEFAULT_FONT_PATHS`; si falta, requiere `fonts-dejavu-core`.
 
 ## Convenciones del repo
 

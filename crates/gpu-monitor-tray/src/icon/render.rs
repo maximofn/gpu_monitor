@@ -1,22 +1,22 @@
 use std::path::Path;
 
-use ab_glyph::{point, Font, FontArc, Glyph, PxScale, ScaleFont};
 use anyhow::{anyhow, Context, Result};
+use fontdue::Font;
 use gpu_monitor_core::Gpu;
 use image::ImageReader;
-use tiny_skia::{
-    BlendMode, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Transform,
-};
+use tiny_skia::{BlendMode, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Transform};
 
 const PER_GPU_GAP: u32 = 4;
 const DONUT_PADDING: u32 = 2;
+// Regular weight + fontdue's TrueType hinting matches the look of PIL/freetype
+// (the legacy Python tray). Bold or unhinted Regular renders fat/blurry at 11px.
 const DEFAULT_FONT_PATHS: &[&str] = &[
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
-    "/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf",
 ];
 
 const COLOR_FREE: [u8; 4] = [0x66, 0xb3, 0xff, 0xff];
@@ -37,7 +37,7 @@ pub struct RenderedIcon {
 pub struct IconRenderer {
     height: u32,
     base_icon: Option<Pixmap>,
-    font: FontArc,
+    font: Font,
 }
 
 struct BlockLayout {
@@ -51,7 +51,11 @@ impl IconRenderer {
     pub fn new(height: u32, base_icon_path: &Path) -> Result<Self> {
         let base_icon = load_base_icon(base_icon_path, height).ok();
         let font = load_font().context("loading DejaVu Sans Mono font")?;
-        Ok(Self { height, base_icon, font })
+        Ok(Self {
+            height,
+            base_icon,
+            font,
+        })
     }
 
     pub fn render(&self, gpus: &[Gpu], connected: bool) -> RenderedIcon {
@@ -70,10 +74,7 @@ impl IconRenderer {
         let img = image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), straight)
             .ok_or_else(|| anyhow!("failed to wrap pixmap as RgbaImage"))?;
         let mut buf = Vec::new();
-        img.write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageFormat::Png,
-        )?;
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
         Ok(buf)
     }
 
@@ -88,7 +89,12 @@ impl IconRenderer {
 
         let mut pixmap = Pixmap::new(total_w.max(h), h).expect("non-zero pixmap");
 
-        let layout = BlockLayout { donut_size, icon_w, text_w, connected };
+        let layout = BlockLayout {
+            donut_size,
+            icon_w,
+            text_w,
+            connected,
+        };
         let mut x_cursor = 0u32;
         for (i, gpu) in gpus.iter().enumerate() {
             if i > 0 {
@@ -125,7 +131,13 @@ impl IconRenderer {
         } else {
             [0xaa, 0xaa, 0xaa, 0xff]
         };
-        self.draw_text(pixmap, text_x as f32, &label, text_size(self.height), text_color);
+        self.draw_text(
+            pixmap,
+            text_x as f32,
+            &label,
+            text_size(self.height),
+            text_color,
+        );
 
         let donut_x = (x + layout.icon_w + 2 + layout.text_w + 2) as f32;
         let used_pct = gpu.memory.used_percent();
@@ -145,40 +157,56 @@ impl IconRenderer {
     }
 
     fn measure_text(&self, text: &str, px: f32) -> u32 {
-        let scaled = self.font.as_scaled(PxScale::from(px));
-        let width: f32 = text.chars().map(|c| scaled.h_advance(scaled.glyph_id(c))).sum();
+        let width: f32 = text
+            .chars()
+            .map(|c| self.font.metrics(c, px).advance_width)
+            .sum();
         width.ceil() as u32
     }
 
     fn draw_text(&self, pixmap: &mut Pixmap, x: f32, text: &str, px: f32, color: [u8; 4]) {
-        let scaled = self.font.as_scaled(PxScale::from(px));
-        let ascent = scaled.ascent();
-        let baseline_y = ((self.height as f32 - px) / 2.0) + ascent;
+        let line = self
+            .font
+            .horizontal_line_metrics(px)
+            .unwrap_or(fontdue::LineMetrics {
+                ascent: px,
+                descent: 0.0,
+                line_gap: 0.0,
+                new_line_size: px,
+            });
+        let baseline_y = ((self.height as f32 - px) / 2.0) + line.ascent;
         let mut cursor_x = x;
         for ch in text.chars() {
-            let glyph: Glyph = scaled.scaled_glyph(ch);
-            let positioned = Glyph { position: point(cursor_x, baseline_y), ..glyph };
-            cursor_x += scaled.h_advance(positioned.id);
-            if let Some(outlined) = scaled.outline_glyph(positioned) {
-                let bb = outlined.px_bounds();
-                outlined.draw(|gx, gy, coverage| {
-                    let px_x = bb.min.x as i32 + gx as i32;
-                    let px_y = bb.min.y as i32 + gy as i32;
-                    if px_x < 0 || px_y < 0 {
-                        return;
+            let (metrics, bitmap) = self.font.rasterize(ch, px);
+            let glyph_left = cursor_x + metrics.xmin as f32;
+            let glyph_top = baseline_y - (metrics.height as f32 + metrics.ymin as f32);
+            for gy in 0..metrics.height {
+                for gx in 0..metrics.width {
+                    let coverage = bitmap[gy * metrics.width + gx];
+                    if coverage == 0 {
+                        continue;
                     }
-                    // Gamma 2.0 boost: thin strokes at small sizes spread their
-                    // coverage across multiple pixels and otherwise look faint.
-                    let boosted = coverage.sqrt();
-                    blend_pixel(pixmap, px_x as u32, px_y as u32, color, boosted);
-                });
+                    let px_x = (glyph_left + gx as f32).round() as i32;
+                    let px_y = (glyph_top + gy as f32).round() as i32;
+                    if px_x < 0 || px_y < 0 {
+                        continue;
+                    }
+                    blend_pixel(
+                        pixmap,
+                        px_x as u32,
+                        px_y as u32,
+                        color,
+                        coverage as f32 / 255.0,
+                    );
+                }
             }
+            cursor_x += metrics.advance_width;
         }
     }
 }
 
 fn text_size(h: u32) -> f32 {
-    (h as f32 * 0.55).clamp(8.0, 16.0)
+    (h as f32 * 0.50).clamp(8.0, 16.0)
 }
 
 fn load_base_icon(path: &Path, target_h: u32) -> Result<Pixmap> {
@@ -190,7 +218,8 @@ fn load_base_icon(path: &Path, target_h: u32) -> Result<Pixmap> {
     let scale = target_h as f32 / h as f32;
     let new_w = ((w as f32) * scale).round().max(1.0) as u32;
     let new_h = target_h;
-    let resized = image::imageops::resize(&img, new_w, new_h, image::imageops::FilterType::Lanczos3);
+    let resized =
+        image::imageops::resize(&img, new_w, new_h, image::imageops::FilterType::Lanczos3);
     let mut pixmap = Pixmap::new(new_w, new_h).context("alloc pixmap")?;
     let dst = pixmap.data_mut();
     for (chunk, out) in resized.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
@@ -203,10 +232,11 @@ fn load_base_icon(path: &Path, target_h: u32) -> Result<Pixmap> {
     Ok(pixmap)
 }
 
-fn load_font() -> Result<FontArc> {
+fn load_font() -> Result<Font> {
     for path in DEFAULT_FONT_PATHS {
         if let Ok(bytes) = std::fs::read(path) {
-            return Ok(FontArc::try_from_vec(bytes)?);
+            return Font::from_bytes(bytes, fontdue::FontSettings::default())
+                .map_err(|e| anyhow!("parsing font {}: {}", path, e));
         }
     }
     anyhow::bail!(
@@ -233,11 +263,19 @@ fn draw_donut(pixmap: &mut Pixmap, x: f32, y: f32, size: u32, used_pct: f32, con
     let r_outer = size as f32 / 2.0;
     let r_inner = r_outer * 0.55;
 
-    let free_color = if connected { COLOR_FREE } else { [0x80, 0x80, 0x80, 0xff] };
+    let free_color = if connected {
+        COLOR_FREE
+    } else {
+        [0x80, 0x80, 0x80, 0xff]
+    };
     fill_disk(pixmap, cx, cy, r_outer, free_color);
 
     if used_pct > 0.5 {
-        let color = if connected { used_color(used_pct) } else { [0x60, 0x60, 0x60, 0xff] };
+        let color = if connected {
+            used_color(used_pct)
+        } else {
+            [0x60, 0x60, 0x60, 0xff]
+        };
         let sweep = (used_pct.clamp(0.0, 100.0) / 100.0) * 360.0;
         fill_pie(pixmap, cx, cy, r_outer, -90.0, -90.0 + sweep, color);
     }
@@ -253,7 +291,13 @@ fn fill_disk(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, color: [u8; 4]) {
     let mut paint = Paint::default();
     paint.set_color_rgba8(color[0], color[1], color[2], color[3]);
     paint.anti_alias = true;
-    pixmap.fill_path(&path, &paint, FillRule::EvenOdd, Transform::identity(), None);
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::EvenOdd,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn clear_disk(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32) {
@@ -264,7 +308,13 @@ fn clear_disk(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32) {
     let mut paint = Paint::default();
     paint.set_color_rgba8(0, 0, 0, 0);
     paint.blend_mode = BlendMode::Clear;
-    pixmap.fill_path(&path, &paint, FillRule::EvenOdd, Transform::identity(), None);
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::EvenOdd,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn fill_pie(
@@ -289,7 +339,13 @@ fn fill_pie(
         let mut paint = Paint::default();
         paint.set_color_rgba8(color[0], color[1], color[2], color[3]);
         paint.anti_alias = true;
-        pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+        pixmap.fill_path(
+            &path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
 }
 
@@ -305,9 +361,7 @@ fn blend_pixel(pixmap: &mut Pixmap, x: u32, y: u32, color: [u8; 4], coverage: f3
         return;
     }
     let inv_a = 255 - src_a;
-    let blend = |s: u8, d: u8| -> u8 {
-        ((s as u32 * src_a + d as u32 * inv_a) / 255) as u8
-    };
+    let blend = |s: u8, d: u8| -> u8 { ((s as u32 * src_a + d as u32 * inv_a) / 255) as u8 };
     data[idx] = blend(color[0], data[idx]);
     data[idx + 1] = blend(color[1], data[idx + 1]);
     data[idx + 2] = blend(color[2], data[idx + 2]);
@@ -397,6 +451,10 @@ mod tests {
         let rgba = vec![0x00, 0x80, 0x00, 0x80];
         let argb = rgba_premul_to_argb_straight(&rgba);
         assert_eq!(argb[0], 0x80);
-        assert!(argb[2] >= 0xfe, "green should round up to ~255, got {:#x}", argb[2]);
+        assert!(
+            argb[2] >= 0xfe,
+            "green should round up to ~255, got {:#x}",
+            argb[2]
+        );
     }
 }
