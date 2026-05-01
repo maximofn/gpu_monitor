@@ -19,11 +19,26 @@ Real-time NVIDIA GPU monitor for Linux. Split into a small backend daemon that r
 
 Both binaries are written in Rust. They live in a single Cargo workspace under `crates/`:
 
-- `gpu-monitor-core` — shared `Snapshot`/`Gpu`/`Process` types serialised with `serde`.
-- `gpu-monitord` — backend daemon. Reads NVML once at boot, polls every second, serves cached snapshots over REST + Server-Sent Events. Defaults to `127.0.0.1:9123`.
-- `gpu-monitor-tray` — Linux system-tray frontend. Subscribes to `/v1/stream`, renders a per-GPU icon (donut + temperature) with `tiny-skia`, exposes a per-GPU submenu via `ksni`.
+- `gpu-monitor-core` — shared `Snapshot` / `Gpu` / `Process` types serialised with `serde`.
+- `gpu-monitord` — backend daemon. Initialises NVML once at start, samples every second on a tokio task, holds the latest snapshot in a `watch` channel, serves it over REST + Server-Sent Events. Defaults to `127.0.0.1:9123`.
+- `gpu-monitor-tray` — Linux system-tray frontend. Subscribes to `/v1/stream`, composes a per-GPU icon (base PNG + temperature label + donut chart) with `tiny-skia`, writes it to `~/.cache/gpu-monitor/icons/` and publishes it as a StatusNotifierItem via `ksni`. Per-GPU submenu with temp / utilisation / memory / power / processes.
 
-The split is what allows another machine to consume the same metrics: a remote frontend (Mac, Windows, web) just hits the API. Only the local Linux frontend is implemented for now.
+Splitting the daemon from the UI lets another machine on the LAN consume the same metrics — a remote frontend (Mac, Windows, web) just hits the API. Only the local Linux frontend is implemented today.
+
+### Why a PNG file instead of an SNI in-memory pixmap?
+
+The tray could send the icon directly over DBus as ARGB bytes (`IconPixmap`), but the GNOME `ubuntu-appindicators` extension squishes wide pixmaps to a square aspect ratio, mangling a multi-GPU icon. The same trick the Python version uses works here: write the icon to disk and publish `IconThemePath` + `IconName` so GNOME loads the file and respects its native dimensions. The frame counter in the filename forces a re-read on every update.
+
+## Performance
+
+Measured against the original Python script monitoring the same two RTX 3090s:
+
+| | RSS | CPU |
+|---|---|---|
+| `gpu_monitor.py` | 181 MB | 176% (2 cores) |
+| `gpu-monitord` + `gpu-monitor-tray` | ~24 MB | ~1.6% |
+
+The Python's CPU cost was dominated by re-rendering the icon with matplotlib + PIL and writing PNGs each second. Going through `nvml-wrapper` directly (no `nvidia-smi pmon` subprocess) and keeping NVML initialised across samples accounts for most of the daemon's win. Replacing matplotlib with `tiny-skia` is the bulk of the tray's win.
 
 ## Requirements
 
@@ -52,7 +67,7 @@ In two terminals (or as services, see below):
 ./target/release/gpu-monitor-tray --backend-url http://127.0.0.1:9123
 ```
 
-The daemon flags (`--bind`, `--port`, `--sample-interval-ms`, `--mock`) are documented in [`docs/api.md`](docs/api.md). The tray accepts `--backend-url` and `--icon-height`.
+The daemon flags (`--bind`, `--port`, `--sample-interval-ms`, `--mock`) are documented in [`docs/api.md`](docs/api.md). The tray accepts `--backend-url`, `--icon-height` and `--dump-icon <path>` (write the next rendered icon to a PNG and exit; useful to inspect what the panel receives).
 
 ### Quick API smoke test
 
@@ -106,7 +121,7 @@ See [`docs/api.md`](docs/api.md) for the full schema and endpoint reference. Qui
 
 ## Legacy Python script
 
-The original `gpu_monitor.py` is still in this directory and may be used during migration. It will be moved to a `legacy/` subdirectory and removed entirely once the Rust release is fully validated.
+The original `gpu_monitor.py` and its `add_to_startup.sh` / `gpu_monitor.sh` helpers are still at the repo root and continue to work — both versions can run side by side (each registers its own tray indicator). They will move to `legacy/` and then be removed once v2 has soaked. Until then, decide which one runs at session start by editing `~/.config/autostart/`.
 
 ## Support
 
