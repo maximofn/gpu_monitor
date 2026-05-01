@@ -1,15 +1,17 @@
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use fontdue::Font;
+use freetype::face::LoadFlag;
+use freetype::{Face, Library};
 use gpu_monitor_core::Gpu;
 use image::ImageReader;
 use tiny_skia::{BlendMode, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Transform};
 
 const PER_GPU_GAP: u32 = 4;
 const DONUT_PADDING: u32 = 2;
-// Regular weight + fontdue's TrueType hinting matches the look of PIL/freetype
-// (the legacy Python tray). Bold or unhinted Regular renders fat/blurry at 11px.
+// Regular weight con `freetype` (mismo motor que PIL/freetype del tray Python).
+// Versiones previas con `fontdue` o `ab_glyph` (sin bytecode interpreter)
+// rasterizaban borroso a 10–12 px aunque hicieran hinting básico.
 const DEFAULT_FONT_PATHS: &[&str] = &[
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
@@ -34,10 +36,21 @@ pub struct RenderedIcon {
     pub argb: Vec<u8>,
 }
 
+// freetype::Library y freetype::Face contienen punteros C crudos y por eso no
+// implementan Send. Pero ksni::TrayService::spawn exige Send en el state.
+// El acceso aquí es secuencial (solo desde la callback de update en el thread
+// de ksni), nunca concurrente, así que es seguro afirmar Send a mano.
+struct FtState {
+    _library: Library,
+    face: Face,
+}
+unsafe impl Send for FtState {}
+unsafe impl Sync for FtState {}
+
 pub struct IconRenderer {
     height: u32,
     base_icon: Option<Pixmap>,
-    font: Font,
+    ft: FtState,
 }
 
 struct BlockLayout {
@@ -50,11 +63,14 @@ struct BlockLayout {
 impl IconRenderer {
     pub fn new(height: u32, base_icon_path: &Path) -> Result<Self> {
         let base_icon = load_base_icon(base_icon_path, height).ok();
-        let font = load_font().context("loading DejaVu Sans Mono font")?;
+        let (ft_library, face) = load_face().context("loading DejaVu Sans Mono font")?;
         Ok(Self {
             height,
             base_icon,
-            font,
+            ft: FtState {
+                _library: ft_library,
+                face,
+            },
         })
     }
 
@@ -81,7 +97,7 @@ impl IconRenderer {
     fn render_pixmap(&self, gpus: &[Gpu], connected: bool) -> Pixmap {
         let h = self.height;
         let donut_size = h.saturating_sub(DONUT_PADDING * 2).max(8);
-        let text_w = self.measure_text("GPU 0(00C)", text_size(h));
+        let text_w = self.measure_text("0(00ºC)", text_size(h));
         let icon_w = self.base_icon.as_ref().map(|p| p.width()).unwrap_or(0);
         let per_gpu_w = icon_w + 2 + text_w + 2 + donut_size;
         let count = gpus.len().max(1) as u32;
@@ -124,7 +140,7 @@ impl IconRenderer {
             );
         }
         let temp = gpu.temperature_c.unwrap_or(0);
-        let label = format!("GPU {}({:>2}C)", gpu.index, temp);
+        let label = format!("{}({:>2}ºC)", gpu.index, temp);
         let text_x = x + layout.icon_w + 2;
         let text_color = if layout.connected {
             COLOR_TEXT
@@ -157,37 +173,63 @@ impl IconRenderer {
     }
 
     fn measure_text(&self, text: &str, px: f32) -> u32 {
-        let width: f32 = text
-            .chars()
-            .map(|c| self.font.metrics(c, px).advance_width)
-            .sum();
-        width.ceil() as u32
+        let px_size = px.round() as u32;
+        if self.ft.face.set_pixel_sizes(0, px_size).is_err() {
+            return 0;
+        }
+        let mut width: i64 = 0;
+        for ch in text.chars() {
+            if self
+                .ft
+                .face
+                .load_char(ch as usize, LoadFlag::DEFAULT)
+                .is_err()
+            {
+                continue;
+            }
+            // advance.x viene en 26.6 fixed-point; >>6 para pasar a pixeles.
+            width += self.ft.face.glyph().advance().x >> 6;
+        }
+        width.max(0) as u32
     }
 
     fn draw_text(&self, pixmap: &mut Pixmap, x: f32, text: &str, px: f32, color: [u8; 4]) {
-        let line = self
-            .font
-            .horizontal_line_metrics(px)
-            .unwrap_or(fontdue::LineMetrics {
-                ascent: px,
-                descent: 0.0,
-                line_gap: 0.0,
-                new_line_size: px,
-            });
-        let baseline_y = ((self.height as f32 - px) / 2.0) + line.ascent;
-        let mut cursor_x = x;
+        let px_size = px.round() as u32;
+        if self.ft.face.set_pixel_sizes(0, px_size).is_err() {
+            return;
+        }
+        // FT::ascender/descender vienen en font units; convertir vía size.metrics().
+        // metrics.ascender está en 26.6 fixed-point.
+        let ascent_px = (self.ft.face.size_metrics().map(|m| m.ascender).unwrap_or(0) >> 6) as f32;
+        let baseline_y = (((self.height as f32 - px_size as f32) / 2.0) + ascent_px).round() as i32;
+        let mut pen_x = x.round() as i32;
         for ch in text.chars() {
-            let (metrics, bitmap) = self.font.rasterize(ch, px);
-            let glyph_left = cursor_x + metrics.xmin as f32;
-            let glyph_top = baseline_y - (metrics.height as f32 + metrics.ymin as f32);
-            for gy in 0..metrics.height {
-                for gx in 0..metrics.width {
-                    let coverage = bitmap[gy * metrics.width + gx];
+            if self
+                .ft
+                .face
+                .load_char(ch as usize, LoadFlag::RENDER | LoadFlag::TARGET_NORMAL)
+                .is_err()
+            {
+                continue;
+            }
+            let glyph = self.ft.face.glyph();
+            let bmp = glyph.bitmap();
+            let buffer = bmp.buffer();
+            let bw = bmp.width();
+            let bh = bmp.rows();
+            let pitch = bmp.pitch();
+            let glyph_left = pen_x + glyph.bitmap_left();
+            let glyph_top = baseline_y - glyph.bitmap_top();
+            for gy in 0..bh {
+                let row_start = (gy * pitch) as isize;
+                for gx in 0..bw {
+                    let idx = (row_start + gx as isize) as usize;
+                    let coverage = buffer[idx];
                     if coverage == 0 {
                         continue;
                     }
-                    let px_x = (glyph_left + gx as f32).round() as i32;
-                    let px_y = (glyph_top + gy as f32).round() as i32;
+                    let px_x = glyph_left + gx;
+                    let px_y = glyph_top + gy;
                     if px_x < 0 || px_y < 0 {
                         continue;
                     }
@@ -200,13 +242,16 @@ impl IconRenderer {
                     );
                 }
             }
-            cursor_x += metrics.advance_width;
+            pen_x += (glyph.advance().x >> 6) as i32;
         }
     }
 }
 
 fn text_size(h: u32) -> f32 {
-    (h as f32 * 0.45).clamp(8.0, 16.0)
+    // Redondear a píxel entero: fontdue hintea limpio solo a tamaños enteros.
+    // Tamaños fraccionarios (e.g. 9.9) dan rasterizado borroso aunque el
+    // hinting esté activado.
+    (h as f32 * 0.45).round().clamp(8.0, 16.0)
 }
 
 fn load_base_icon(path: &Path, target_h: u32) -> Result<Pixmap> {
@@ -232,11 +277,14 @@ fn load_base_icon(path: &Path, target_h: u32) -> Result<Pixmap> {
     Ok(pixmap)
 }
 
-fn load_font() -> Result<Font> {
+fn load_face() -> Result<(Library, Face)> {
+    let library = Library::init().context("initializing freetype library")?;
     for path in DEFAULT_FONT_PATHS {
-        if let Ok(bytes) = std::fs::read(path) {
-            return Font::from_bytes(bytes, fontdue::FontSettings::default())
-                .map_err(|e| anyhow!("parsing font {}: {}", path, e));
+        if std::path::Path::new(path).exists() {
+            let face = library
+                .new_face(path, 0)
+                .map_err(|e| anyhow!("loading font {}: {}", path, e))?;
+            return Ok((library, face));
         }
     }
     anyhow::bail!(
