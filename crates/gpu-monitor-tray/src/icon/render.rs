@@ -165,6 +165,15 @@ impl IconRenderer {
             used_pct,
             layout.connected,
         );
+
+        // Porcentaje numérico centrado en el hueco del donut. Tamaño 8 px:
+        // entra "100" (3 chars × ~4.8 px advance ≈ 14 px) en el inner
+        // diameter ~14 px sin tocar el anillo de forma molesta.
+        let pct_text = (used_pct.round() as u32).to_string();
+        let pct_size = 8.0;
+        let pct_w = self.measure_text(&pct_text, pct_size) as f32;
+        let pct_x = donut_x + layout.donut_size as f32 / 2.0 - pct_w / 2.0;
+        self.draw_text(pixmap, pct_x, &pct_text, pct_size, text_color);
     }
 
     fn draw_empty(&self, pixmap: &mut Pixmap, donut_size: u32) {
@@ -309,7 +318,7 @@ fn draw_donut(pixmap: &mut Pixmap, x: f32, y: f32, size: u32, used_pct: f32, con
     let cx = x + size as f32 / 2.0;
     let cy = y + size as f32 / 2.0;
     let r_outer = size as f32 / 2.0;
-    let r_inner = r_outer * 0.72;
+    let r_inner = r_outer * 0.78;
 
     let free_color = if connected {
         COLOR_FREE
