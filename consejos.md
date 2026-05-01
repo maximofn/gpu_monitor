@@ -100,15 +100,35 @@ Si alguien "limpia" esto en el futuro reemplazándolo por `icon_pixmap()` se rom
 
 Si solo haces swizzle de bytes sin unpremul, los bordes anti-aliased salen oscuros/desaturados. Es muy sutil — el archivo PNG se ve "raro pero quizás bien" hasta que lo compones sobre un fondo y notas que blanco-50% sale gris-25%.
 
-### Texto en el icono — usa `fontdue`, no `ab_glyph`
+### Texto en el icono — usa `freetype-rs`, ni `fontdue` ni `ab_glyph`
 
-`ab_glyph` no hace hinting. A 11–12 px (tamaño de panel típico) los strokes finos de DejaVu Sans Mono Regular quedan a alpha ~50 (casi invisibles). Workaround feo: gamma `coverage.sqrt()` + Bold weight, pero sigue saliendo gordito y emborronado.
+Iteré en este orden y solo el tercero igualó al Python:
 
-**`fontdue` rasteriza con hinting TrueType** y a 11px se ve igual que la versión Python (que usa freetype vía PIL). Verdict tras iterar: **`fontdue` Regular weight con tamaño ~50% del icon_height**. Mira `crates/gpu-monitor-tray/src/icon/render.rs` ya migrado para el patrón completo.
+1. **`ab_glyph`** (sin hinting). Trazos finos a 11px quedan a alpha ~50, casi invisibles. Workaround feo: Bold + gamma `coverage.sqrt()`. Sale gordito y emborronado.
+2. **`fontdue`** (con hinting básico). Mejor que `ab_glyph`, pero NO iguala al Python. fontdue hace su propio hinting simplificado, no ejecuta el TrueType bytecode interpreter — los stems no snapean al pixel grid con la fuerza de freetype. A 10–11 px todavía se ve un puntito más suave / fofo que el Python.
+3. **`freetype-rs`** (wrapping libfreetype del sistema). **El único que iguala al Python**, porque PIL usa freetype por debajo. Bytecode interpreter real, stem snapping fuerte, trazos pixel-perfect a 10 px.
 
-Empieza directamente con `fontdue` + Regular + factor 0.50 — me costó iterar para llegar aquí porque el primer intento (`ab_glyph` + Bold + gamma) parecía leíble en aislamiento, pero al ponerlo lado a lado con la captura del Python original era obviamente peor. **Compáralo siempre contra el Python en una imagen lado-a-lado, no en aislamiento.**
+Verdict final: **`freetype-rs` + Regular weight + tamaño redondeado a entero (`(h * 0.45).round()`)** + `LoadFlag::RENDER | LoadFlag::TARGET_NORMAL`. Posiciones de glifo redondeadas al pixel antes de pintar (`pen_x.round()`, `baseline_y.round()`). Mira `crates/gpu-monitor-tray/src/icon/render.rs` para el patrón completo.
 
-Carga la fuente con un fallback de paths candidatos (`/usr/share/fonts/truetype/dejavu/...`). Si no hay, falla con un mensaje claro pidiendo `apt install fonts-dejavu-core`.
+Gotchas de `freetype-rs`:
+
+- **Versión pinneada**: en Ubuntu 20.04 la libfreetype del sistema es 23.1.17 (lo que pkg-config reporta como ABI version, no la versión "humana" 2.10.1). `freetype-rs 0.37` exige `freetype2 >= 24.3.18` (sistema con freetype 2.12+). Para 20.04 usa **`freetype-rs = "0.32"`**. Si tu distro es más nueva puedes subir.
+- **No implementa `Send`**: `Library` y `Face` contienen punteros C crudos. `ksni::TrayService::spawn` exige `Send` en el state. Solución: envolver ambos en una struct con `unsafe impl Send + Sync`. Es seguro porque el acceso aquí es secuencial (solo desde la callback de `update` del thread de ksni), nunca concurrente.
+  ```rust
+  struct FtState { _library: Library, face: Face }
+  unsafe impl Send for FtState {}
+  unsafe impl Sync for FtState {}
+  ```
+- **API en 26.6 fixed-point**: `glyph.advance().x` y `size_metrics().ascender` vienen en 26.6, hay que hacer `>> 6` para pasarlos a píxeles enteros.
+- **Pixel size entero**: `face.set_pixel_sizes(0, px_u32)` solo acepta enteros. Si tu factor da `9.9` redondea a `10`.
+
+Empieza directamente con `freetype-rs` — si vas por `ab_glyph` o `fontdue` perderás horas iterando workarounds que no llegarán a la calidad de PIL. **Compáralo siempre contra el Python en una imagen lado-a-lado, no en aislamiento.**
+
+Carga la fuente con un fallback de paths candidatos (`/usr/share/fonts/truetype/dejavu/...`). Si no hay, falla con un mensaje claro pidiendo `apt install fonts-dejavu-core`. También necesitas `libfreetype-dev` en build (run-time solo `libfreetype6`).
+
+### Cuidado con caracteres "casi iguales": ºC ≠ °C
+
+El Python original usa `ºC` con **U+00BA (Indicador Ordinal Masculino)**, no `°C` con U+00B0 (Signo de Grado). Visualmente son casi idénticos, pero copia el carácter exacto del Python para no romper la coincidencia byte-a-byte cuando alguien diff-ea o busca por texto. DejaVu Mono soporta ambos.
 
 ### Cliente SSE — backoff razonable
 
@@ -217,6 +237,9 @@ WantedBy=default.target
 - Pushear directo a `main` sin avisar. La sandbox lo bloquea (correcto). Aunque el repo sea solo, di explícitamente "voy a pushear a main" y deja que el usuario lo haga si la política lo bloquea.
 - Justificar una decisión visualmente cuestionable con un comentario en `CLAUDE.md` ("Bold + gamma porque sin ello el texto es ilegible"). Si la doc explica un workaround feo, **el workaround probablemente está mal** — busca la causa raíz (en este caso: `ab_glyph` no hace hinting, la solución era cambiar de rasterizador). No "documentes" un mal sabor: arréglalo.
 - Confundir `cargo fmt --all` con un cambio sin efecto. Reformatea archivos que no tocaste y ensucia el commit. Si tu cambio es localizado, usa `cargo fmt -p <crate>` o aplica fmt **antes** de empezar (en un commit separado) para que tu PR contenga solo lógica.
+- Asumir que un reemplazo pure-Rust iguala a la lib C de referencia. `fontdue` "hace hinting", sí — pero no ejecuta el TrueType bytecode interpreter como freetype. A pequeño tamaño la diferencia es visible. **Si Python usa libX por debajo, usa libX, no su clon pure-Rust.** El trabajo de igualar visualmente a freetype con un rasterizador alternativo no se cierra.
+- Usar `pkill -x <binary>` para matar el tray. **El kernel trunca `comm` (la columna de `ps`) a 15 caracteres**; un nombre como `gpu-monitor-tray` (16 chars) NO matchea exact con `-x`. Mata por PID concreto tras `pgrep -f "<full-path>$"`, o usa `pkill -f "<full-path>$"` con el path completo (que no se trunca porque vive en cmdline, no en comm).
+- Pretender más precisión de la que da el sensor. NVML expone temperatura como `u32` Celsius — no hay `.5` ni `.7`. Mostrar `45.0ºC` solo añade ruido visual fingiendo precisión que el hardware no entrega. Refleja la precisión real de la fuente.
 
 ## Comparativa de recursos a la que aspirar
 
@@ -232,6 +255,6 @@ Para CPU/RAM/Disk la mejora será aún mayor proporcionalmente — el Python ori
 ## Lecturas obligatorias antes de empezar
 
 - `CLAUDE.md` de este repo — covers el patrón completo del backend y los gotchas del icono.
-- `crates/gpu-monitor-tray/src/icon/render.rs` — implementación completa de iconos con `tiny-skia` + `fontdue` + ambas conversiones de alpha.
+- `crates/gpu-monitor-tray/src/icon/render.rs` — implementación completa de iconos con `tiny-skia` + `freetype-rs` + ambas conversiones de alpha.
 - `crates/gpu-monitor-tray/src/tray.rs` — patrón `set_state` + `refresh_icon_file` + `IconName`/`IconThemePath` por SNI.
 - `crates/gpu-monitord/src/sampler.rs` — patrón sampler + watch channel.
