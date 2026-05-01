@@ -91,6 +91,13 @@ fn locate_icon() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("GPU_MONITOR_TRAY_ICON") {
         candidates.push(PathBuf::from(path));
     }
+    let xdg_data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
+    if let Some(data) = xdg_data {
+        candidates.push(data.join("gpu-monitor").join("tarjeta-de-video.png"));
+    }
+    candidates.push(PathBuf::from("/usr/share/gpu-monitor/tarjeta-de-video.png"));
     candidates.push(PathBuf::from(ASSET_ICON_REL));
     if let Some(workspace_root) = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

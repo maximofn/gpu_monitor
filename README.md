@@ -2,7 +2,7 @@
 
 Real-time NVIDIA GPU monitor for Linux. Split into a small backend daemon that reads NVML and exposes an HTTP/SSE API, plus a system-tray frontend that renders an icon and menu in the Ubuntu/GNOME panel.
 
-![gpu monitor](gpu_monitor.gif)
+![gpu monitor](assets/gpu_monitor.gif)
 
 ## Architecture
 
@@ -121,7 +121,7 @@ See [`docs/api.md`](docs/api.md) for the full schema and endpoint reference. Qui
 
 ## Legacy Python script
 
-The original `gpu_monitor.py` and its `add_to_startup.sh` / `gpu_monitor.sh` helpers are still at the repo root and continue to work — both versions can run side by side (each registers its own tray indicator). They will move to `legacy/` and then be removed once v2 has soaked. Until then, decide which one runs at session start by editing `~/.config/autostart/`.
+The original `gpu_monitor.py` and its `add_to_startup.sh` / `gpu_monitor.sh` helpers live in `legacy/` for reference. They still work standalone (`python3 legacy/gpu_monitor.py`) but are no longer wired into autostart. They will be removed entirely after a soak period on the Rust release.
 
 ## Support
 

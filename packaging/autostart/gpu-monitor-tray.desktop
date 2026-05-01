@@ -2,8 +2,8 @@
 Type=Application
 Name=GPU Monitor Tray
 Comment=System tray indicator for GPU usage (consumes gpu-monitord)
-Exec=%h/.local/bin/gpu-monitor-tray
-Icon=%h/.local/share/gpu-monitor/tarjeta-de-video.png
+Exec=sh -c "exec $HOME/.local/bin/gpu-monitor-tray"
+Icon=tarjeta-de-video
 Terminal=false
 Hidden=false
 NoDisplay=false
