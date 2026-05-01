@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=GPU Monitor Tray
+Comment=System tray indicator for GPU usage (consumes gpu-monitord)
+Exec=%h/.local/bin/gpu-monitor-tray
+Icon=%h/.local/share/gpu-monitor/tarjeta-de-video.png
+Terminal=false
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Categories=System;Monitor;

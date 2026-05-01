@@ -1,0 +1,19 @@
+[Unit]
+Description=GPU monitor backend (NVML metrics over HTTP/SSE)
+Documentation=https://github.com/maximofn/gpu_monitor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/gpu-monitord
+Restart=on-failure
+RestartSec=2s
+MemoryMax=128M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target

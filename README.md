@@ -1,63 +1,115 @@
 # GPU Monitor
 
-🖥️ GPU Monitor for Ubuntu: The Ultimate Real-Time GPU Tracking Tool. Monitor your GPU's performance, temperature, and memory usage directly from your Ubuntu menu bar with GPU Monitor. This user-friendly and efficient application supports multiple GPUs and is fully integrated with the latest Ubuntu operating system. Get live updates and optimize your gaming or development tasks. Download now and take control of your GPU's health today!
+Real-time NVIDIA GPU monitor for Linux. Split into a small backend daemon that reads NVML and exposes an HTTP/SSE API, plus a system-tray frontend that renders an icon and menu in the Ubuntu/GNOME panel.
 
 ![gpu monitor](gpu_monitor.gif)
 
-## About GPU Monitor
-GPU Monitor is an intuitive tool designed for developers, gamers, and professionals who need to keep an eye on their graphics card's performance and health in real time. It integrates seamlessly with the Ubuntu menu bar, providing essential information at your fingertips.
+## Architecture
 
-## Key Features
- * Real-time Monitoring: View GPU utilization, memory and temperature, all updated live.
- * Multi-GPU Support: Manage and monitor multiple GPUs from a single instance.
- * Optimized for Ubuntu: Crafted to integrate flawlessly with the latest Ubuntu OS.
-
-## Installation
-
-### Clone the repository
-
-```bash
-git clone https://github.com/maximofn/gpu_monitor.git
+```
++-------------------+       HTTP/SSE        +----------------------+
+|   gpu-monitord    | <-------------------- |   gpu-monitor-tray   |
+|  (NVML sampler)   |   /v1/stream JSON     |  (ksni + tiny-skia)  |
++-------------------+                       +----------------------+
+        ^                                            ^
+        | NVML                                       | DBus (StatusNotifierItem)
+        v                                            v
+   NVIDIA driver                              GNOME / KDE panel
 ```
 
-or with `ssh`
+Both binaries are written in Rust. They live in a single Cargo workspace under `crates/`:
+
+- `gpu-monitor-core` — shared `Snapshot`/`Gpu`/`Process` types serialised with `serde`.
+- `gpu-monitord` — backend daemon. Reads NVML once at boot, polls every second, serves cached snapshots over REST + Server-Sent Events. Defaults to `127.0.0.1:9123`.
+- `gpu-monitor-tray` — Linux system-tray frontend. Subscribes to `/v1/stream`, renders a per-GPU icon (donut + temperature) with `tiny-skia`, exposes a per-GPU submenu via `ksni`.
+
+The split is what allows another machine to consume the same metrics: a remote frontend (Mac, Windows, web) just hits the API. Only the local Linux frontend is implemented for now.
+
+## Requirements
+
+- NVIDIA driver with NVML (the `nvidia-smi` package). Tested with driver 555.42.06 / CUDA 12.5.
+- DejaVu Sans Mono font (`apt install fonts-dejavu-core`).
+- A desktop with StatusNotifierItem support. On Ubuntu/GNOME this means the **AppIndicator** extension (`gnome-shell-extension-appindicator`) must be enabled. KDE works out of the box.
+- Rust toolchain (`stable`, ≥ 1.85). `rustup` will pick it up automatically from `rust-toolchain.toml`.
+
+## Build
 
 ```bash
-git clone git@github.com:maximofn/gpu_monitor.git
+cargo build --release --workspace
 ```
 
-### Install the dependencies
+Produces two binaries:
 
-Make sure that you do not have any `venv` or `conda` environment installed.
+- `target/release/gpu-monitord`
+- `target/release/gpu-monitor-tray`
+
+## Run
+
+In two terminals (or as services, see below):
 
 ```bash
-if [ -n "$VIRTUAL_ENV" ]; then
-    deactivate
-fi
-if command -v conda &>/dev/null; then
-    conda deactivate
-fi
+./target/release/gpu-monitord --bind 127.0.0.1 --port 9123
+./target/release/gpu-monitor-tray --backend-url http://127.0.0.1:9123
 ```
 
-Now install the dependencies
+The daemon flags (`--bind`, `--port`, `--sample-interval-ms`, `--mock`) are documented in [`docs/api.md`](docs/api.md). The tray accepts `--backend-url` and `--icon-height`.
+
+### Quick API smoke test
 
 ```bash
-sudo apt-get install python3-gi python3-gi-cairo gir1.2-gtk-3.0
-sudo apt-get install gir1.2-appindicator3-0.1
-pip3 install nvidia-ml-py3
-pip3 install pynvml
+curl -s http://127.0.0.1:9123/v1/snapshot | jq
+curl -N http://127.0.0.1:9123/v1/stream      # SSE: one event per second
 ```
 
-## Execution at start-up
+## Install (optional)
+
+Daemon as a `systemd --user` service:
 
 ```bash
-add_to_startup.sh
+install -Dm755 target/release/gpu-monitord ~/.local/bin/gpu-monitord
+install -Dm644 packaging/systemd/gpu-monitord.service \
+    ~/.config/systemd/user/gpu-monitord.service
+systemctl --user daemon-reload
+systemctl --user enable --now gpu-monitord
+journalctl --user -u gpu-monitord -f
 ```
 
-Then when you restart your computer, the GPU Monitor will start automatically.
+Tray as a session autostart:
+
+```bash
+install -Dm755 target/release/gpu-monitor-tray ~/.local/bin/gpu-monitor-tray
+install -Dm644 assets/tarjeta-de-video.png \
+    ~/.local/share/gpu-monitor/tarjeta-de-video.png
+install -Dm644 packaging/autostart/gpu-monitor-tray.desktop \
+    ~/.config/autostart/gpu-monitor-tray.desktop
+```
+
+## API
+
+See [`docs/api.md`](docs/api.md) for the full schema and endpoint reference. Quick reference:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /healthz` | liveness |
+| `GET /v1/info` | backend / driver metadata |
+| `GET /v1/snapshot` | full latest snapshot |
+| `GET /v1/gpus` | per-GPU metadata only |
+| `GET /v1/gpus/{idx}` | one GPU |
+| `GET /v1/gpus/{idx}/processes` | process list |
+| `GET /v1/stream` | SSE — one snapshot per event |
+
+## Roadmap
+
+- v2.0: Linux tray frontend (this release)
+- v2.1: Auth token + LAN bind for remote consumption
+- v2.2: macOS / Windows tray frontends consuming the same backend
+
+## Legacy Python script
+
+The original `gpu_monitor.py` is still in this directory and may be used during migration. It will be moved to a `legacy/` subdirectory and removed entirely once the Rust release is fully validated.
 
 ## Support
 
-Consider giving a **☆ Star** to this repository, if you also want to invite me for a coffee, click on the following button
+If this is useful to you, consider giving a **☆ Star** to the repository or buying a coffee:
 
 [![BuyMeACoffee](https://img.shields.io/badge/Buy_Me_A_Coffee-support_my_work-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white&labelColor=101010)](https://www.buymeacoffee.com/maximofn)

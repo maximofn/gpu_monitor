@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gpu-monitor-core",
+    "crates/gpu-monitord",
+    "crates/gpu-monitor-tray",
+]
+
+[workspace.package]
+version = "2.0.0-alpha.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/maximofn/gpu_monitor"
+authors = ["Maximo Fernandez <maximofn@gmail.com>"]
+rust-version = "1.85"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = 3

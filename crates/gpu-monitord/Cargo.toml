@@ -1,0 +1,32 @@
+[package]
+name = "gpu-monitord"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "HTTP daemon serving NVIDIA GPU metrics over REST + SSE."
+
+[[bin]]
+name = "gpu-monitord"
+path = "src/main.rs"
+
+[dependencies]
+gpu-monitor-core = { path = "../gpu-monitor-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+clap = { version = "4", features = ["derive", "env"] }
+nvml-wrapper = "0.10"
+hostname = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+futures-util = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
