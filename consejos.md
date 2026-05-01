@@ -130,6 +130,48 @@ Carga la fuente con un fallback de paths candidatos (`/usr/share/fonts/truetype/
 
 El Python original usa `ºC` con **U+00BA (Indicador Ordinal Masculino)**, no `°C` con U+00B0 (Signo de Grado). Visualmente son casi idénticos, pero copia el carácter exacto del Python para no romper la coincidencia byte-a-byte cuando alguien diff-ea o busca por texto. DejaVu Mono soporta ambos.
 
+### Layout y código de colores del icono
+
+Valores destilados tras varias iteraciones con el usuario mirando capturas reales del panel. No los elijas de cero — copia y ajusta solo si el monitor tuyo tiene métricas distintas.
+
+**Layout** (con `icon_height = 22` px):
+
+```
+[icono recurso ~22x22] 2px [label texto] 2px [donut 18x18]   <gap 4px>   [siguiente bloque...]
+```
+
+- **Tamaño de texto del label**: `(h * 0.45).round()` = 10 px. Probé 0.50 (sale grande), 0.40 (sale ilegible).
+- **Tamaño del donut**: `h - DONUT_PADDING*2` = 18 px. `r_inner = r_outer * 0.78` ⇒ anillo del 22% de grosor (probé 0.55 grueso, 0.72 medio, 0.80 demasiado fino).
+- **Texto del número dentro del donut**: 8 px hardcoded (depende del inner diameter, no de `h`). Encaja "100" justo justo en el inner diameter de 14 px sin tocar el anillo.
+
+**Paleta** (constantes `[u8; 4]` RGBA en `render.rs`):
+
+| const            | hex       | uso                                         |
+|---               |---        |---                                          |
+| `COLOR_TEXT`     | `#ffffff` | label normal, número dentro del donut       |
+| `COLOR_FREE`     | `#66b3ff` | anillo: porción libre                       |
+| `COLOR_OK`       | `#99ff99` | anillo lleno <70% del recurso               |
+| `COLOR_WARN1`    | `#ffdb4d` | anillo 70–80%, **label cuando temp 60–80**  |
+| `COLOR_WARN2`    | `#ffcc99` | anillo 80–90%                               |
+| `COLOR_HIGH`     | `#ff6666` | anillo ≥90%, **label cuando temp ≥80**      |
+
+Para CPU/RAM/disk reusa la misma paleta; cambia solo qué umbrales activan qué color para tu recurso.
+
+**Estado disconnected**: todo el bloque pasa a gris `#aaaaaa` (texto), `#808080` (anillo libre), `#606060` (anillo usado). Sigue mostrando el último snapshot, pero la atenuación de color avisa de que los datos pueden estar viejos.
+
+**Umbrales** (los que el usuario aceptó tras iterar):
+
+- **Memoria** (color del wedge usado en el donut): 0–69% verde, 70–79% amarillo, 80–89% naranja, ≥90% rojo.
+- **Temperatura** (color del label de texto **entero**): <60 ºC blanco, 60–79 ºC amarillo, ≥80 ºC rojo.
+
+Un solo umbral combinado para texto + ºC suena obvio pero no lo era al principio: probé "solo los dígitos en amarillo", luego "dígitos + ºC", y al final "todo el label". Lo más legible a 22 px de alto resulta ser el label completo cambiando de color — el ojo capta el cambio cromático antes que un detalle dentro del label.
+
+**Principio clave: cada métrica colorea solo SU elemento.** No mezcles. La temperatura **no** afecta al donut (que es de memoria) ni al número del centro. El número del centro va siempre en color neutro (`COLOR_TEXT` / gris) porque el wedge del anillo ya hace el código de colores para memoria. Si pintas el número en rojo cuando la memoria está al 95%, encima de un anillo ya rojo, queda redundante y ruidoso.
+
+**Format del label**: `"{idx}({temp:>2}ºC)"`. Sin prefijo "GPU "/"CPU "/"RAM " — gana espacio del panel y el icono del recurso a la izquierda ya identifica qué es. El `:>2` reserva 2 chars de ancho para que `5ºC` y `45ºC` ocupen lo mismo y el donut no salte de posición al variar la temperatura.
+
+**Coloreado del label en segmentos**: si en algún momento quieres colorear solo parte del label (ej. solo los dígitos de temperatura), parte el `format!` en 3 strings y haz 3 llamadas a `draw_text` avanzando con `measure_text` entre cada una. Funciona bien con monospace porque el ancho total no cambia. Pero el verdict tras probarlo fue: colorear el label entero es más legible a tamaño tray.
+
 ### Cliente SSE — backoff razonable
 
 `reqwest-eventsource` con cap de **5s**, no 30s. Resetea el backoff al recibir `Event::Open`. 30s da una UX horrible cuando el daemon se reinicia rápido.
