@@ -21,7 +21,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/snapshot", axum::routing::get(routes::snapshot))
         .route("/v1/gpus", axum::routing::get(routes::gpus))
         .route("/v1/gpus/:idx", axum::routing::get(routes::gpu))
-        .route("/v1/gpus/:idx/processes", axum::routing::get(routes::processes))
+        .route(
+            "/v1/gpus/:idx/processes",
+            axum::routing::get(routes::processes),
+        )
         .route("/v1/stream", axum::routing::get(sse::stream))
         .layer(TraceLayer::new_for_http())
         .with_state(state)

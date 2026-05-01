@@ -1,10 +1,18 @@
 use clap::Parser;
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "gpu-monitor-tray", about = "Linux system-tray frontend for gpu-monitord", version)]
+#[command(
+    name = "gpu-monitor-tray",
+    about = "Linux system-tray frontend for gpu-monitord",
+    version
+)]
 pub struct Config {
     /// Base URL of the gpu-monitord HTTP API.
-    #[arg(long, env = "GPU_MONITOR_TRAY_URL", default_value = "http://127.0.0.1:9123")]
+    #[arg(
+        long,
+        env = "GPU_MONITOR_TRAY_URL",
+        default_value = "http://127.0.0.1:9123"
+    )]
     pub backend_url: String,
 
     /// tracing-subscriber EnvFilter directive.

@@ -82,7 +82,10 @@ mod tests {
                 fan_speed_percent: Some(30),
                 power_draw_w: Some(120.5),
                 power_limit_w: Some(450.0),
-                utilization: Utilization { gpu_percent: 25, memory_percent: 10 },
+                utilization: Utilization {
+                    gpu_percent: 25,
+                    memory_percent: 10,
+                },
                 memory: Memory {
                     used_bytes: 2 * 1024 * 1024 * 1024,
                     free_bytes: 22 * 1024 * 1024 * 1024,
@@ -110,7 +113,11 @@ mod tests {
 
     #[test]
     fn used_percent_computes_correctly() {
-        let m = Memory { used_bytes: 50, free_bytes: 50, total_bytes: 100 };
+        let m = Memory {
+            used_bytes: 50,
+            free_bytes: 50,
+            total_bytes: 100,
+        };
         assert!((m.used_percent() - 50.0).abs() < f32::EPSILON);
     }
 }

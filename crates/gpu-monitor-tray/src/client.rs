@@ -25,7 +25,11 @@ pub fn spawn(backend_url: String, tx: mpsc::Sender<Update>) {
                 Ok(()) => break,
                 Err(err) => {
                     tracing::warn!(error = %err, "SSE session ended; reconnecting");
-                    if tx.send(Update::Disconnected(err.to_string())).await.is_err() {
+                    if tx
+                        .send(Update::Disconnected(err.to_string()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

@@ -20,8 +20,8 @@ async fn main() -> Result<()> {
     let cfg = Config::parse();
     init_tracing(&cfg.log_level);
 
-    let icon_path = locate_icon()
-        .context("could not find tarjeta-de-video.png; install via `assets/`")?;
+    let icon_path =
+        locate_icon().context("could not find tarjeta-de-video.png; install via `assets/`")?;
     let renderer = IconRenderer::new(cfg.icon_height, &icon_path)?;
 
     if let Some(path) = cfg.dump_icon.as_ref() {
@@ -73,8 +73,14 @@ async fn dump_icon_once(
     for (chunk, pixel) in rendered.argb.chunks_exact(4).zip(img.pixels_mut()) {
         *pixel = image::Rgba([chunk[1], chunk[2], chunk[3], chunk[0]]);
     }
-    img.save(out_path).with_context(|| format!("writing {}", out_path.display()))?;
-    println!("wrote {} ({}x{})", out_path.display(), rendered.width, rendered.height);
+    img.save(out_path)
+        .with_context(|| format!("writing {}", out_path.display()))?;
+    println!(
+        "wrote {} ({}x{})",
+        out_path.display(),
+        rendered.width,
+        rendered.height
+    );
     Ok(())
 }
 

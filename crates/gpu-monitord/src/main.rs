@@ -118,7 +118,10 @@ fn mock_gpus() -> Vec<gpu_monitor_core::Gpu> {
             fan_speed_percent: Some(30),
             power_draw_w: Some(120.0),
             power_limit_w: Some(450.0),
-            utilization: Utilization { gpu_percent: 25, memory_percent: 10 },
+            utilization: Utilization {
+                gpu_percent: 25,
+                memory_percent: 10,
+            },
             memory: Memory {
                 used_bytes: 4 * 1024 * 1024 * 1024,
                 free_bytes: 20 * 1024 * 1024 * 1024,
@@ -139,7 +142,10 @@ fn mock_gpus() -> Vec<gpu_monitor_core::Gpu> {
             fan_speed_percent: Some(20),
             power_draw_w: Some(50.0),
             power_limit_w: Some(350.0),
-            utilization: Utilization { gpu_percent: 5, memory_percent: 1 },
+            utilization: Utilization {
+                gpu_percent: 5,
+                memory_percent: 1,
+            },
             memory: Memory {
                 used_bytes: 1024 * 1024 * 1024,
                 free_bytes: 23 * 1024 * 1024 * 1024,

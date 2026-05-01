@@ -25,7 +25,11 @@ impl NvmlSource {
         let nvml = Nvml::init()?;
         let driver_version = nvml.sys_driver_version().ok();
         let cuda_version = nvml.sys_cuda_driver_version().ok().map(format_cuda_version);
-        Ok(Self { nvml, driver_version, cuda_version })
+        Ok(Self {
+            nvml,
+            driver_version,
+            cuda_version,
+        })
     }
 
     fn sample_device(&self, index: u32, device: &Device<'_>) -> Result<Gpu> {
@@ -42,7 +46,10 @@ impl NvmlSource {
 
         let utilization = device
             .utilization_rates()
-            .map(|u| Utilization { gpu_percent: u.gpu, memory_percent: u.memory })
+            .map(|u| Utilization {
+                gpu_percent: u.gpu,
+                memory_percent: u.memory,
+            })
             .unwrap_or_default();
 
         let memory_info = device.memory_info()?;
@@ -140,7 +147,11 @@ fn collect_processes(device: &Device<'_>) -> Vec<Process> {
     }
 
     let mut out: Vec<Process> = by_pid.into_values().collect();
-    out.sort_by(|a, b| b.used_memory_bytes.cmp(&a.used_memory_bytes).then(a.pid.cmp(&b.pid)));
+    out.sort_by(|a, b| {
+        b.used_memory_bytes
+            .cmp(&a.used_memory_bytes)
+            .then(a.pid.cmp(&b.pid))
+    });
     out
 }
 
@@ -203,7 +214,11 @@ mod tests {
             power_draw_w: None,
             power_limit_w: None,
             utilization: Utilization::default(),
-            memory: Memory { used_bytes: 0, free_bytes: 100, total_bytes: 100 },
+            memory: Memory {
+                used_bytes: 0,
+                free_bytes: 100,
+                total_bytes: 100,
+            },
             processes: vec![],
         };
         let mock = MockSource::new(vec![gpu.clone()]);

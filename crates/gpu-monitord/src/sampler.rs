@@ -70,7 +70,11 @@ mod tests {
             power_draw_w: None,
             power_limit_w: None,
             utilization: Utilization::default(),
-            memory: Memory { used_bytes: 0, free_bytes: 1024, total_bytes: 1024 },
+            memory: Memory {
+                used_bytes: 0,
+                free_bytes: 1024,
+                total_bytes: 1024,
+            },
             processes: vec![],
         }
     }

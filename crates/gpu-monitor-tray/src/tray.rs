@@ -64,7 +64,10 @@ impl GpuTray {
     }
 
     fn refresh_icon_file(&mut self) {
-        let png = match self.renderer.render_png(self.current_gpus(), self.connected()) {
+        let png = match self
+            .renderer
+            .render_png(self.current_gpus(), self.connected())
+        {
             Ok(bytes) => bytes,
             Err(err) => {
                 tracing::warn!(error = %err, "failed to render icon PNG");
@@ -81,7 +84,9 @@ impl GpuTray {
 
         // Drop the previous frame so the cache directory does not grow.
         if !self.current_icon_name.is_empty() {
-            let old = self.icon_dir.join(format!("{}.png", self.current_icon_name));
+            let old = self
+                .icon_dir
+                .join(format!("{}.png", self.current_icon_name));
             let _ = std::fs::remove_file(old);
         }
         self.current_icon_name = new_name;
@@ -145,7 +150,12 @@ impl Tray for GpuTray {
             }
             State::Disconnected(err) => format!("Backend offline: {err}"),
         };
-        ToolTip { icon_name: String::new(), icon_pixmap: Vec::new(), title, description }
+        ToolTip {
+            icon_name: String::new(),
+            icon_pixmap: Vec::new(),
+            title,
+            description,
+        }
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
@@ -153,7 +163,10 @@ impl Tray for GpuTray {
 
         match &self.state {
             State::Connecting => {
-                items.push(disabled_item(format!("Connecting to {}…", self.backend_url)));
+                items.push(disabled_item(format!(
+                    "Connecting to {}…",
+                    self.backend_url
+                )));
                 items.push(MenuItem::Separator);
             }
             State::Disconnected(err) => {
@@ -174,7 +187,10 @@ impl Tray for GpuTray {
                         .map(|d| format!(" — driver {d}"))
                         .unwrap_or_default()
                 )));
-                items.push(disabled_item(format!("Updated: {}", short_time(&snap.timestamp))));
+                items.push(disabled_item(format!(
+                    "Updated: {}",
+                    short_time(&snap.timestamp)
+                )));
                 items.push(MenuItem::Separator);
             }
         }
@@ -226,7 +242,10 @@ fn gpu_submenu(gpu: &Gpu) -> SubMenu<GpuTray> {
         gpu.memory.used_percent()
     )));
     if let (Some(draw), Some(limit)) = (gpu.power_draw_w, gpu.power_limit_w) {
-        entries.push(disabled_item(format!("Power: {:.0}W / {:.0}W", draw, limit)));
+        entries.push(disabled_item(format!(
+            "Power: {:.0}W / {:.0}W",
+            draw, limit
+        )));
     }
 
     if gpu.processes.is_empty() {
@@ -249,11 +268,19 @@ fn gpu_submenu(gpu: &Gpu) -> SubMenu<GpuTray> {
         }
     }
 
-    SubMenu { label: header, submenu: entries, ..Default::default() }
+    SubMenu {
+        label: header,
+        submenu: entries,
+        ..Default::default()
+    }
 }
 
 fn disabled_item(label: String) -> MenuItem<GpuTray> {
-    MenuItem::Standard(StandardItem { label, enabled: false, ..Default::default() })
+    MenuItem::Standard(StandardItem {
+        label,
+        enabled: false,
+        ..Default::default()
+    })
 }
 
 fn kind_label(kind: ProcessKind) -> &'static str {
@@ -285,5 +312,9 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 fn short_time(rfc3339: &str) -> &str {
-    rfc3339.split('T').nth(1).and_then(|s| s.split('.').next()).unwrap_or(rfc3339)
+    rfc3339
+        .split('T')
+        .nth(1)
+        .and_then(|s| s.split('.').next())
+        .unwrap_or(rfc3339)
 }
