@@ -206,7 +206,7 @@ impl IconRenderer {
 }
 
 fn text_size(h: u32) -> f32 {
-    (h as f32 * 0.50).clamp(8.0, 16.0)
+    (h as f32 * 0.45).clamp(8.0, 16.0)
 }
 
 fn load_base_icon(path: &Path, target_h: u32) -> Result<Pixmap> {
@@ -261,7 +261,7 @@ fn draw_donut(pixmap: &mut Pixmap, x: f32, y: f32, size: u32, used_pct: f32, con
     let cx = x + size as f32 / 2.0;
     let cy = y + size as f32 / 2.0;
     let r_outer = size as f32 / 2.0;
-    let r_inner = r_outer * 0.55;
+    let r_inner = r_outer * 0.72;
 
     let free_color = if connected {
         COLOR_FREE
