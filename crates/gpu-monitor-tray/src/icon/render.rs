@@ -141,19 +141,27 @@ impl IconRenderer {
         }
         let temp = gpu.temperature_c.unwrap_or(0);
         let label = format!("{}({:>2}ºC)", gpu.index, temp);
-        let text_x = x + layout.icon_w + 2;
-        let text_color = if layout.connected {
+        let px = text_size(self.height);
+        let neutral_color = if layout.connected {
             COLOR_TEXT
         } else {
             [0xaa, 0xaa, 0xaa, 0xff]
         };
-        self.draw_text(
-            pixmap,
-            text_x as f32,
-            &label,
-            text_size(self.height),
-            text_color,
-        );
+        // El label de temperatura entera cambia de color por encima de
+        // umbrales: amarillo en [60, 80) ºC, rojo a partir de 80 ºC.
+        // El porcentaje del donut es de memoria, no de temperatura, así que
+        // mantiene `neutral_color`.
+        let label_color = if !layout.connected {
+            neutral_color
+        } else if temp >= 80 {
+            COLOR_HIGH
+        } else if temp >= 60 {
+            COLOR_WARN1
+        } else {
+            COLOR_TEXT
+        };
+        let text_x = x + layout.icon_w + 2;
+        self.draw_text(pixmap, text_x as f32, &label, px, label_color);
 
         let donut_x = (x + layout.icon_w + 2 + layout.text_w + 2) as f32;
         let used_pct = gpu.memory.used_percent();
@@ -173,7 +181,7 @@ impl IconRenderer {
         let pct_size = 8.0;
         let pct_w = self.measure_text(&pct_text, pct_size) as f32;
         let pct_x = donut_x + layout.donut_size as f32 / 2.0 - pct_w / 2.0;
-        self.draw_text(pixmap, pct_x, &pct_text, pct_size, text_color);
+        self.draw_text(pixmap, pct_x, &pct_text, pct_size, neutral_color);
     }
 
     fn draw_empty(&self, pixmap: &mut Pixmap, donut_size: u32) {
