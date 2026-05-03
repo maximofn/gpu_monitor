@@ -12,15 +12,15 @@ Workspace Cargo con tres crates por monitor:
 <monitor>-tray    →  frontend Linux (system tray)
 ```
 
-**Decisión ya tomada para esta familia de monitores**: tres workspaces independientes, uno por recurso (`cpu_monitor/`, `ram_monitor/`, `disk_monitor/`). NO consolides en un único `system-monitord`.
+**Decisión ya tomada para esta familia de monitores**: workspaces independientes, uno por recurso (`cpu_monitor/`, `ram_monitor/`, `disk_monitor/`, `input_audio_device/`, `output_audio_device/`). NO consolides en un único `system-monitord`.
 
 Razón: alguien sin GPU NVIDIA debe poder instalarse solo CPU + RAM + Disk sin que aparezca `gpu-monitord` como dependencia. Empaquetarlos juntos obligaría a tirar todo o nada. Cada repo es independiente y deployable por separado.
 
 Implicaciones que asumimos:
 
-- Tres `systemctl --user` units (`cpu-monitord.service`, `ram-monitord.service`, `disk-monitord.service`).
-- Tres iconos en la barra del sistema, lado a lado.
-- **Puertos distintos** para que puedan correr a la vez: gpu=9123, cpu=9124, ram=9125, disk=9126. Documenta el tuyo en `<monitor>_core::DEFAULT_PORT`.
+- Una `systemctl --user` unit por monitor (`cpu-monitord.service`, ...).
+- Un icono por monitor en la barra del sistema, lado a lado.
+- **Puertos distintos** para que puedan correr a la vez: gpu=9123, cpu=9124, ram=9125, disk=9126, input-audio=9127, output-audio=9128. Documenta el tuyo en `<monitor>_core::DEFAULT_PORT`.
 - Duplicación de boilerplate por repo (CLAUDE.md, .gitignore, packaging/, scripts de install). Es el precio de la independencia — no intentes factorizar a un crate compartido entre repos, complica el despliegue.
 - En el README de cada uno, **enlaza a los hermanos** ("Si quieres también CPU/RAM/Disk: ver…") para que el usuario los descubra.
 
@@ -66,6 +66,34 @@ struct MockSource { ... }                  // tests + CI sin hardware
 GPU usaba `running_compute_processes()` de NVML. Para CPU/RAM no hay equivalente — itera `/proc/[0-9]+/` leyendo `stat` y `status`. Para disk I/O por proceso necesitas `/proc/<pid>/io`. **No spawnees `top`/`ps`** (regex frágil, 50–200 ms por llamada).
 
 ## Frontend Linux — el problema que más tiempo me costó
+
+### `IconThemePath` debe ser absoluta o GNOME enseña tres puntos
+
+Síntoma: el tray arranca limpio, los logs dicen "SSE stream open", el icono **no aparece** y en su lugar el panel muestra tres puntos (placeholder genérico de GNOME-shell cuando el SNI publica un `IconName` que su resolver no encuentra). El bug es siempre el mismo: alguien pasa una ruta relativa a `icon_theme_path()`.
+
+GNOME-shell **no resuelve rutas relativas al cwd del proceso del tray**. Tampoco te lo dice — falla silenciosamente y pinta el placeholder. Asegúrate de canonicalizar antes de mandárselo a ksni:
+
+```rust
+fn icon_theme_path(&self) -> String {
+    self.icon_dir.canonicalize()                  // o canonicalize() en el setup,
+        .unwrap_or_else(|_| self.icon_dir.clone()) // y guardar el resultado
+        .to_string_lossy()
+        .into_owned()
+}
+```
+
+Lo pisé con `output_audio_device`: el binario corría desde la raíz del workspace y publicaba `IconThemePath = "assets"`. Funciona en KDE (que sí walkea relativo en algunos paths), no en GNOME. Soluciona en el `prepare_icon_dir` con `dir.canonicalize()?` antes de devolverlo.
+
+### Monitores sin overlay numérico: salta `tiny-skia` + `freetype-rs` enteros
+
+Si tu monitor solo necesita un **icono identificable** y no pinta una métrica numérica encima (CPU%, temperatura, MB libres, ...) no metas el stack de rendering. El tray de `output_audio_device` es solo "muestra un altavoz, abre menú con sinks": apunta `IconThemePath` al directorio donde vive `speaker.png` instalado, `IconName = "speaker"`, y listo. Nada de `tiny-skia`, nada de `freetype-rs`, nada de `~/.cache/<monitor>/icons/`. El binario adelgaza ~2 MB y arranca al instante.
+
+Aplica si:
+- El monitor es de control (cambiar default sink, mute/unmute, conmutar perfil) más que de telemetría.
+- La métrica no cabe en el icono a tamaño tray (ej. lista de N elementos donde N varía).
+- Vas a iterar el menú, no el icono.
+
+Si más tarde quieres **feedback visual de disconnected** (icono gris cuando el daemon no responde), solo entonces metes `tiny-skia` para componer una versión gris al vuelo. Sigue sin necesitar `freetype-rs` mientras no haya texto.
 
 ### **GNOME aplasta los `IconPixmap` anchos.** No te creas el plan inicial.
 
@@ -171,6 +199,48 @@ Un solo umbral combinado para texto + ºC suena obvio pero no lo era al principi
 **Format del label**: `"{idx}({temp:>2}ºC)"`. Sin prefijo "GPU "/"CPU "/"RAM " — gana espacio del panel y el icono del recurso a la izquierda ya identifica qué es. El `:>2` reserva 2 chars de ancho para que `5ºC` y `45ºC` ocupen lo mismo y el donut no salte de posición al variar la temperatura.
 
 **Coloreado del label en segmentos**: si en algún momento quieres colorear solo parte del label (ej. solo los dígitos de temperatura), parte el `format!` en 3 strings y haz 3 llamadas a `draw_text` avanzando con `measure_text` entre cada una. Funciona bien con monospace porque el ancho total no cambia. Pero el verdict tras probarlo fue: colorear el label entero es más legible a tamaño tray.
+
+### Callbacks de menú con trabajo async — funelízalos por mpsc
+
+Si tu tray va a hacer trabajo asíncrono cuando el usuario clica un `MenuItem` (HTTP POST al daemon, lectura de un fichero grande, lo que sea), **no llames `.await` directamente desde el `activate` callback**. Ese callback corre en el thread del servicio ksni, que no tiene runtime de tokio asociado: `reqwest::Client::post(...).send().await` falla con "no reactor running".
+
+La solución limpia es un `tokio::sync::mpsc::Sender` que captura cada callback y una task async dedicada que consume el receptor:
+
+```rust
+let (action_tx, action_rx) = mpsc::channel::<Action>(8);
+client::spawn_action_worker(backend_url, action_rx); // task async con reqwest
+let tray_state = MyTray::new(action_tx, ...);
+
+// dentro del menu():
+MenuItem::Standard(StandardItem {
+    activate: Box::new(move |_tray| {
+        // try_send es safe desde cualquier thread; si el buffer está
+        // lleno (8) descartamos el click — el usuario lo verá como
+        // "no respondió" y volverá a clicar.
+        let _ = action_tx.try_send(Action::SwitchSink(name.clone()));
+    }),
+    ..Default::default()
+})
+```
+
+`try_send` no bloquea, no necesita runtime, y no entra en pánico si el canal está cerrado. **No** envuelvas el callback en `tokio::runtime::Handle::current().block_on(...)` — funciona hoy por accidente y se rompe en cuanto la task del servicio ksni cambia de thread.
+
+Patrón implementado en `output_audio_device/crates/audio-monitor-tray/src/client.rs::spawn_switcher`.
+
+### Endpoints mutadores — empuja el snapshot fresco al `watch::Sender`
+
+Si tu daemon expone un POST que cambia el estado del recurso (en `output_audio_device` es `POST /v1/sinks/default` que llama a `pactl set-default-sink`), no esperes al próximo tick del sampler para que los clientes SSE vean el cambio. Tras la mutación:
+
+```rust
+state.source.set_default_sink(&req.name).await?;
+let fresh = sampler::build_snapshot(&state.host, state.source.as_ref()).await;
+let _ = state.snapshot_tx.send(fresh.clone());   // mismo Sender que tiene el sampler
+Ok(Json(fresh))
+```
+
+El handler comparte el `tokio::sync::watch::Sender` con el sampler — `watch` coalesce internamente, da igual quién empuje el último snapshot. Latencia percibida del click → confirmación visual: ~50 ms en vez de hasta 1 s.
+
+CPU/RAM/disk probablemente no necesitan endpoints mutadores (son monitores read-only), pero si añades uno en el futuro este es el patrón.
 
 ### Cliente SSE — backoff razonable
 
@@ -282,6 +352,8 @@ WantedBy=default.target
 - Asumir que un reemplazo pure-Rust iguala a la lib C de referencia. `fontdue` "hace hinting", sí — pero no ejecuta el TrueType bytecode interpreter como freetype. A pequeño tamaño la diferencia es visible. **Si Python usa libX por debajo, usa libX, no su clon pure-Rust.** El trabajo de igualar visualmente a freetype con un rasterizador alternativo no se cierra.
 - Usar `pkill -x <binary>` para matar el tray. **El kernel trunca `comm` (la columna de `ps`) a 15 caracteres**; un nombre como `gpu-monitor-tray` (16 chars) NO matchea exact con `-x`. Mata por PID concreto tras `pgrep -f "<full-path>$"`, o usa `pkill -f "<full-path>$"` con el path completo (que no se trunca porque vive en cmdline, no en comm).
 - Pretender más precisión de la que da el sensor. NVML expone temperatura como `u32` Celsius — no hay `.5` ni `.7`. Mostrar `45.0ºC` solo añade ruido visual fingiendo precisión que el hardware no entrega. Refleja la precisión real de la fuente.
+- Devolver una ruta relativa desde `icon_theme_path()`. El daemon arrancaba bien, ksni publicaba el SNI, los logs estaban limpios — y el panel mostraba tres puntos. GNOME-shell ignora paths relativos sin avisar. Canonicaliza siempre antes de devolver. Pisado en `output_audio_device`; tardé ~10 min en darme cuenta porque el log decía `dir=assets` y eso "parecía OK".
+- Asumir que todo monitor de la familia necesita el stack `tiny-skia` + `freetype-rs`. Para `output_audio_device` (icono estático, métrica = lista de devices, no número) sobraba todo el rendering: 2 MB menos de binario, 0 dependencias nativas (sin `libfreetype-dev` en build, sin `fonts-dejavu-core` en runtime), iteración mucho más rápida. Pregúntate primero **qué pintas** antes de copiar el render del `gpu_monitor`.
 
 ## Comparativa de recursos a la que aspirar
 
@@ -291,6 +363,15 @@ Medido en `gpu_monitor` (RTX 3090 ×2, samples cada segundo):
 |---|---|---|
 | RSS | 147 MB | ~24 MB |
 | CPU | 160% (1.6 cores) | 1.5% |
+
+Medido en `output_audio_device` (icono estático, sin overlay numérico):
+
+| | Python original (`output_audio_device.py`) | Rust back+front |
+|---|---|---|
+| RSS | ~42 MB | ~8 MB (4.4 MB daemon + 3.7 MB tray) |
+| CPU | 0.8% | 0.1% |
+
+Sin texto/donut por pintar el tray cae a ~4 MB; el daemon es minúsculo porque `pactl` ya hace el trabajo y nosotros solo parseamos su stdout.
 
 Para CPU/RAM/Disk la mejora será aún mayor proporcionalmente — el Python original probablemente arrastra menos peso (sin matplotlib si no pinta gráficos), pero el coste relativo de Rust es mínimo.
 
