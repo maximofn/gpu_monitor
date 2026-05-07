@@ -172,6 +172,13 @@ Valores destilados tras varias iteraciones con el usuario mirando capturas reale
 - **Tamaño del donut**: `h - DONUT_PADDING*2` = 18 px. `r_inner = r_outer * 0.78` ⇒ anillo del 22% de grosor (probé 0.55 grueso, 0.72 medio, 0.80 demasiado fino).
 - **Texto del número dentro del donut**: 8 px hardcoded (depende del inner diameter, no de `h`). Encaja "100" justo justo en el inner diameter de 14 px sin tocar el anillo.
 
+**Ancho del label: per-bloque vs. máximo global.** Decisión que depende de si el contenido del label cambia frame a frame:
+
+- **GPU/CPU** (label incluye temperatura, ej. `0(45ºC)`): calcular el ancho como `measure_text("0(00ºC)")` — el **máximo posible** entre todos los GPUs, NO el de cada uno por separado. Si dejas que cada GPU tenga su propio ancho, los donuts saltan ±1–2 px frame a frame cuando la temperatura cruza de 2 a 3 dígitos (45 → 100). Visualmente espantoso a 1 Hz.
+- **Disk** (label es el mountpoint corto, estático en la sesión): cada bloque mide su propio label. `/` ocupa 6 px, `seagat` ocupa 32 px — desperdiciar el ancho de `seagat` para `/` añadiría ~26 px de barra que el usuario no recupera. Como el label NO cambia dentro de una sesión, los donuts no saltan.
+
+Regla: si la métrica que va dentro del label puede cambiar de ancho dentro de una sesión, máximo global; si es estática, per-bloque.
+
 **Paleta** (constantes `[u8; 4]` RGBA en `render.rs`):
 
 | const            | hex       | uso                                         |
@@ -241,6 +248,23 @@ Ok(Json(fresh))
 El handler comparte el `tokio::sync::watch::Sender` con el sampler — `watch` coalesce internamente, da igual quién empuje el último snapshot. Latencia percibida del click → confirmación visual: ~50 ms en vez de hasta 1 s.
 
 CPU/RAM/disk probablemente no necesitan endpoints mutadores (son monitores read-only), pero si añades uno en el futuro este es el patrón.
+
+**Excepción real ya pisada en `disk_monitor`**: el daemon expone `POST /v1/rescan/{mount}` para forzar un walk de los archivos más grandes en un mount. Es un mutador "lateral" — no cambia métricas instantáneas, pero arranca trabajo en background cuyo resultado se publica en el siguiente snapshot. El daemon ya hace coalesce internamente (varios POSTs seguidos = 1 walk por mount), así que el cliente puede mandar sin pensar.
+
+Desde el menú del frontend macOS lo dispara así, sin bloquear el cierre del menú:
+
+```swift
+@objc private func rescanMount(_ sender: NSMenuItem) {
+    guard let mountPoint = sender.representedObject as? String else { return }
+    let url = SSEClient.rescanURL(from: backendURL, mountPoint: mountPoint)
+    Task.detached {
+        var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
+    }
+}
+```
+
+`Task.detached` para que el handler del menú devuelva inmediatamente. Si haces `await` en el `@objc` directamente, el menú se queda colgado renderizando el "click feedback" hasta que vuelve la respuesta. Equivalente al patrón mpsc del tray Linux pero usando el runtime de Swift Concurrency en vez de tokio. **URL-encode el mount point** (`/media/wallabot/seagate2T` → percent-escape los `/`s después de stripping del leading) — si no, axum no matchea la ruta.
 
 ### Cliente SSE — backoff razonable
 
