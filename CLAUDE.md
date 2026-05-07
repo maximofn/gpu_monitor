@@ -50,6 +50,8 @@ ssh -fN -L 9123:127.0.0.1:9123 <ubuntu-host>
 open "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
 ```
 
+Para que el túnel sobreviva a reinicios y reconecte solo, hay un LaunchAgent en `~/Library/LaunchAgents/com.maximofn.gpu-monitor-tunnel.plist` que lanza el mismo `ssh -N -L` con `KeepAlive`, `ServerAliveInterval=30` y `ExitOnForwardFailure=yes`. Cero cambios en el host con GPU — sigue bindeado a loopback. Gestión: `launchctl load -w / unload` + logs en `~/Library/Logs/gpu-monitor-tunnel.{out,err}.log`.
+
 Tras tocar código Swift hay que **re-empaquetar el `.app`** (`./scripts/build-app.sh`) — `swift build` solo regenera `.build/release/GPUMonitorTray`, no copia el binario al bundle. Lanzar `open GPU Monitor.app` con el bundle viejo es la confusión #1 cuando algo "no se actualiza".
 
 ## Arquitectura
@@ -137,6 +139,7 @@ Solución: suscribirse a `DistributedNotificationCenter` con `AppleInterfaceThem
 - **`monospacedDigitSystemFont`** para el label numérico — coincide con el formato del reloj y la batería del sistema. Se nota.
 - **`--dump-icon` síncrono**: usar `URLSession.shared.dataTask` con `semaphore.wait()` en main thread bloquea el `MainActor` y la task del renderer nunca corre. Solución: `Data(contentsOf:)` síncrono + `CGImageDestination` para escribir el PNG.
 - **`LSUIElement = true`** en `Info.plist`: app menubar-only, sin Dock icon, sin menú "Aplicación".
+- **Estado desconectado/connecting**: icono GPU atenuado + un guion `-`, **sin donut**. Un anillo gris al 0% se lee como "memoria al 0%" (métrica real), no como "sin datos". El guion comunica ausencia sin ambigüedad. Si vuelves a meter un donut gris aquí, regresión visual.
 
 ## Convenciones del repo
 

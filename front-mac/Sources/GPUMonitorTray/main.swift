@@ -12,16 +12,27 @@ if let dumpPath = config.dumpIcon {
     // MainActor executor IS the main thread). The renderer's PNG path is
     // pure Core Graphics so it doesn't need AppKit isolation.
     let url = SSEClient.snapshotURL(from: config.backendURL)
+    let renderer = IconRenderer(height: config.iconHeight)
     do {
         let data = try Data(contentsOf: url)
         let snap = try JSONDecoder().decode(Snapshot.self, from: data)
-        let renderer = IconRenderer(height: config.iconHeight)
         try renderer.renderPNG(gpus: snap.gpus, connected: true, to: dumpPath)
         print("wrote \(dumpPath)")
         exit(0)
     } catch {
-        FileHandle.standardError.write(Data("error: \(error.localizedDescription)\n".utf8))
-        exit(1)
+        // Fall back to the disconnected look so --dump-icon doubles as a way to
+        // preview the offline state (point it at a bogus URL on purpose).
+        FileHandle.standardError.write(
+            Data("backend unreachable (\(error.localizedDescription)) — dumping disconnected icon\n".utf8)
+        )
+        do {
+            try renderer.renderPNG(gpus: [], connected: false, to: dumpPath)
+            print("wrote \(dumpPath) (disconnected)")
+            exit(0)
+        } catch {
+            FileHandle.standardError.write(Data("error: \(error.localizedDescription)\n".utf8))
+            exit(1)
+        }
     }
 }
 

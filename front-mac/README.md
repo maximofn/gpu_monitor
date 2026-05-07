@@ -65,6 +65,40 @@ El backend está pensado para LAN privada con HTTP plano. El bundle declara
 esta config**: el roadmap del backend prevé `--auth-token` cuando se haga bind
 fuera de loopback.
 
+### Túnel SSH persistente (recomendado)
+
+Mientras el daemon siga bindeado a `127.0.0.1` (default seguro), la forma limpia
+de consumirlo desde el Mac es un LaunchAgent que mantiene un `ssh -N -L` vivo
+al login y reconecta si se cae. Sin tocar nada del servidor:
+
+```xml
+<!-- ~/Library/LaunchAgents/com.maximofn.gpu-monitor-tunnel.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.maximofn.gpu-monitor-tunnel</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string>
+    <string>-o</string><string>ExitOnForwardFailure=yes</string>
+    <string>-o</string><string>ServerAliveInterval=30</string>
+    <string>-o</string><string>ServerAliveCountMax=3</string>
+    <string>-L</string><string>9123:127.0.0.1:9123</string>
+    <string>&lt;ssh-host&gt;</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardErrorPath</key><string>/Users/&lt;you&gt;/Library/Logs/gpu-monitor-tunnel.err.log</string>
+</dict></plist>
+```
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.maximofn.gpu-monitor-tunnel.plist
+# luego: la app apunta a http://127.0.0.1:9123 (default)
+```
+
+Equivale a HTTPS+auth gratis (cifrado y autenticación los pone SSH con tus claves)
+sin escribir código en Rust ni en Swift.
+
 ## Schema y compatibilidad
 
 `Models.swift` replica `crates/gpu-monitor-core/src/model.rs`. Si añades campos

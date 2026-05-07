@@ -436,6 +436,61 @@ Pensé que detectaría si la barra está en modo claro u oscuro. Devolvía `.lig
 
 Implementación naive: `URLSession.shared.dataTask` con un `DispatchSemaphore.wait()` en el main thread para esperar el snapshot. Bloquea el `MainActor`, la task del renderer nunca corre, deadlock. Solución: para el path de dump usar `Data(contentsOf:)` síncrono + `CGImageDestination` para escribir el PNG. La regla: **el path "render once and exit" no debe compartir async runtime con la app interactiva.**
 
+#### `pkill -f GPUMonitorTray` no mata nada
+
+Cargo target = `GPUMonitorTray`, pero el script de empaquetado renombra el binario a `gpu-monitor-tray-mac` al meterlo en el bundle (`Contents/MacOS/gpu-monitor-tray-mac`). `pkill -f GPUMonitorTray` no encuentra nada y crees que ya está parada cuando sigue corriendo. Mata por el nombre real: `pkill -f gpu-monitor-tray-mac` (o por PID concreto, mejor).
+
+#### Lanzar el `.app` con `&` desde bash → muere por SIGHUP
+
+`./.build/.../gpu-monitor-tray-mac --backend-url ... &` aparenta funcionar — el binario se queda en background, el icono aparece — pero al cerrar la sesión bash el shell manda SIGHUP a sus hijos y la app se va. Ni `disown` ni `nohup` se llevan bien con un Swift NSStatusItem en este flujo. **Lánzala con `open -n`**, que la registra en launchd como app GUI proper:
+
+```bash
+open -n "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
+```
+
+#### `open` reactiva la instancia existente y descarta `--args`
+
+Si ya hay una `GPU Monitor.app` corriendo, `open ... --args --backend-url X` **no relanza nada**: macOS solo activa la instancia existente y los args se ignoran silenciosamente. Crees que cambiaste la URL de backend y sigues hablando con la vieja. Dos formas correctas:
+
+- `open -n` para forzar una instancia nueva (puedes acabar con dos icons en la barra — mata la vieja antes).
+- Matar la vieja por nombre real (`pkill -f gpu-monitor-tray-mac`) y luego `open` normal.
+
+### Túnel SSH persistente vía LaunchAgent — alternativa al `ssh -fN` manual
+
+`ssh -fN -L 9123:127.0.0.1:9123 <host>` lanzado a mano funciona pero muere si reinicias el Mac, si SSH se cae por inactividad o si la VPN renegocia. Para uso real, mete un LaunchAgent que lo gobierne:
+
+```xml
+<!-- ~/Library/LaunchAgents/com.maximofn.gpu-monitor-tunnel.plist -->
+<key>ProgramArguments</key><array>
+  <string>/usr/bin/ssh</string>
+  <string>-N</string>
+  <string>-o</string><string>ExitOnForwardFailure=yes</string>
+  <string>-o</string><string>ServerAliveInterval=30</string>
+  <string>-o</string><string>ServerAliveCountMax=3</string>
+  <string>-L</string><string>9123:127.0.0.1:9123</string>
+  <string>wallabot</string>
+</array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>ThrottleInterval</key><integer>10</integer>
+```
+
+Tres claves importantes:
+
+- **`ExitOnForwardFailure=yes`**: si el puerto local 9123 ya está ocupado o el host no responde, ssh sale en vez de quedarse en estado "conectado pero sin forward". Combinado con `KeepAlive=true` + `ThrottleInterval=10`, launchd reintenta cada 10 s.
+- **`ServerAliveInterval=30`**: el cliente SSH manda keepalives. Sin esto, la NAT del router puede tirar la conexión a los 5–10 minutos de idle (los handlers HTTP tienen tráfico, pero si la app del tray no está corriendo, el túnel queda silencioso).
+- **`autossh` no hace falta**. Antes era estándar para esto, hoy `KeepAlive` de launchd + `ServerAliveInterval` de ssh cubren el mismo caso sin dependencias extra (Homebrew, etc.).
+
+`ssh-agent` no se invoca explícitamente — macOS expone el agente del Keychain en `SSH_AUTH_SOCK` para LaunchAgents de la sesión GUI, así que las claves `~/.ssh/id_*` desbloqueadas en login se usan transparentes. Si tu clave tiene passphrase y no está en el Keychain, el agent fallará silencioso al login y verás `Permission denied (publickey)` en `~/Library/Logs/gpu-monitor-tunnel.err.log`.
+
+#### El donut gris al 0% no significa "sin datos"
+
+Primer intento del estado disconnected en macOS: pintar el donut con `usedPercent=0` y palette atenuada (`#808080` libre, `#606060` usado). Visualmente: un anillo gris cerrado. **Se lee como "0% de uso real" en gris**, no como "sin datos". El usuario lo dijo en cuanto lo vio.
+
+Solución que sí comunica ausencia: **icono GPU atenuado + un guion `-`, sin donut**. El guion no tiene una métrica plausible que se le pueda atribuir, así que se lee inequívocamente como "no hay valor". Además ahorra ancho de barra (más útil con multi-GPU).
+
+Aplica la misma lógica a CPU/RAM/disk cuando los portes: si la métrica tiene un valor "0" semánticamente válido, no uses "0" o un anillo a 0% para representar disconnected. Usa un símbolo no-numérico (`-`, `?`, atenuación total).
+
 ### Defaults seguros y SSH port forward
 
 El daemon Linux bindea `127.0.0.1` por convención del repo (sin auth). Para que el Mac consuma el backend remoto **sin abrir LAN**, lo limpio es:

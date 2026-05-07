@@ -184,9 +184,11 @@ struct IconRenderer {
         let perGPU = iconW + 2 + probeWidth + 2 + donutSize
         let total: CGFloat
         if gpus.isEmpty {
-            // Empty state: just icon + small gap + donut. Keeps the bar narrow
-            // and avoids reserving space for text we no longer draw.
-            total = iconW + 4 + donutSize
+            // Disconnected / connecting: icon + dash, no donut. The dash signals
+            // "no data" without the visual weight of a (always grey) ring that
+            // could be misread as "0% used".
+            let dashW = measureText("-", size: textPx)
+            total = iconW + 4 + dashW + 2
         } else {
             let count = CGFloat(gpus.count)
             total = perGPU * count + perGPUGap * max(0, count - 1)
@@ -208,11 +210,9 @@ struct IconRenderer {
 
     private func draw(layout: Layout, ctx: CGContext, connected: Bool) {
         if layout.gpus.isEmpty {
-            // Connecting / disconnected / no GPUs: show only the base icon
-            // (dimmed) plus a grey donut. We deliberately do NOT draw any text
-            // here — older versions wrote "no GPUs" at x=0 which got covered
-            // by the donut at x=0, leaving a clipped "GPUs" visible. The menu
-            // already explains the state in plain text.
+            // Connecting / disconnected: show only the base icon (dimmed) and
+            // a dash. No donut — a grey ring at "0%" reads like a real reading
+            // when there is none. The menu already explains the state in text.
             var x: CGFloat = 0
             if let icon = baseIcon {
                 let iconHpt = CGFloat(icon.height) / 2.0
@@ -227,13 +227,13 @@ struct IconRenderer {
                 ctx.restoreGState()
                 x += iconWpt + 4
             }
-            drawDonut(
+            drawText(
+                "-",
                 ctx: ctx,
                 x: x,
-                y: donutPadding,
-                size: layout.donutSize,
-                usedPercent: 0,
-                connected: false
+                size: layout.textPx,
+                color: IconColors.dimText(layout.appearance),
+                blockHeight: height
             )
             return
         }
