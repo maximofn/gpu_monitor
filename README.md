@@ -25,6 +25,8 @@ Both Rust binaries live in a single Cargo workspace under `crates/`:
 
 A native macOS frontend lives in `front-mac/` as an independent Swift Package (Swift + AppKit + CoreGraphics, zero third-party deps). It consumes the same `/v1/stream` endpoint and renders into the macOS menubar via `NSStatusItem`. See [`front-mac/README.md`](front-mac/README.md).
 
+A declarative Home Assistant integration lives in `home-assistant/` (no custom component — just YAML packages on top of HA's built-in `rest`). 28 sensors per host (driver/cuda/host/count + 12 per GPU) plus a Lovelace dashboard. Connectivity via SSH forward tunnel from the raspberry running HA to the GPU host; daemon stays on `127.0.0.1` with a dedicated SSH key restricted to `permitopen="127.0.0.1:9123"`. See [`home-assistant/README.md`](home-assistant/README.md).
+
 Splitting the daemon from the UI lets another machine on the LAN consume the same metrics — a remote frontend just hits the API. The Mac frontend can connect directly when the daemon binds LAN, or through SSH port forwarding while the daemon stays on `127.0.0.1`.
 
 ### Why a PNG file instead of an SNI in-memory pixmap?
@@ -142,12 +144,33 @@ cd front-mac
 
 Logs land in `~/Library/Logs/gpu-monitor-tray.{out,err}.log`. The agent expects the backend reachable at `http://127.0.0.1:9123` — pair it with the SSH-tunnel LaunchAgent (`com.maximofn.gpu-monitor-tunnel`) when the daemon runs on a remote host.
 
+## Home Assistant integration
+
+Surface GPU state as native HA sensors with no custom component — just a YAML package on top of `default_config`'s `rest` integration. Polls `/v1/snapshot` every 15 s and exposes 28 entities (host metadata + 12 per GPU: temp, util, mem used/total/%, power draw/limit, fan, top process with full process list as attributes).
+
+```bash
+# On the raspberry running Home Assistant:
+cd home-assistant/tunnel
+./install.sh                                 # generates dedicated SSH key, installs systemd user unit
+# (paste the printed pubkey line into the GPU host's ~/.ssh/authorized_keys)
+
+# Copy the package and reload HA:
+cp ../packages/gpu_monitor.yaml /config/packages/
+# Add to /config/configuration.yaml:
+#   homeassistant:
+#     packages: !include_dir_named packages
+docker restart homeassistant
+```
+
+See [`home-assistant/README.md`](home-assistant/README.md) for the full deploy guide, including the dedicated key restriction (`restrict,port-forwarding,permitopen="127.0.0.1:9123"`) and a Lovelace dashboard YAML.
+
 ## Roadmap
 
 - v2.0: Linux tray frontend (released)
 - v2.1: macOS menubar frontend (`front-mac/`, released)
-- v2.2: Auth token + LAN bind for remote consumption
-- v2.3: Windows tray frontend
+- v2.2: Home Assistant integration (`home-assistant/`, released)
+- v2.3: Auth token + LAN bind for remote consumption
+- v2.4: Windows tray frontend
 
 ## Legacy Python script
 

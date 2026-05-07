@@ -155,6 +155,52 @@ Solución: suscribirse a `DistributedNotificationCenter` con `AppleInterfaceThem
 - **`LSUIElement = true`** en `Info.plist`: app menubar-only, sin Dock icon, sin menú "Aplicación".
 - **Estado desconectado/connecting**: icono GPU atenuado + un guion `-`, **sin donut**. Un anillo gris al 0% se lee como "memoria al 0%" (métrica real), no como "sin datos". El guion comunica ausencia sin ambigüedad. Si vuelves a meter un donut gris aquí, regresión visual.
 
+## Home Assistant (`home-assistant/`)
+
+Integración declarativa con HA (en raspihome) usando el componente `rest` que viene con `default_config`. Sin custom component, sin Python — solo YAML. 28 sensores: 4 de host (driver/cuda/host/count) + 12 por GPU.
+
+### Topología
+
+```
+[ wallabot, GPU host ]                    [ raspihome, HA Docker --network host ]
+  gpu-monitord :9123  ◄── ssh -L ────────  127.0.0.1:9123
+                                                 │
+                                                 └─► sensor.rest (poll 15 s)
+```
+
+**Túnel forward desde raspihome**, NO reverse desde wallabot. La raspberry es la máquina always-on con HA, mosquitto, pihole — el túnel vive donde viven los demás servicios. Wallabot solo añade una pubkey en `authorized_keys` (cero binarios, cero unit files, cero `enable-linger`).
+
+### Por qué REST y no SSE
+
+`gpu-monitord` también expone SSE, pero HA tiene `rest` declarativo nativo: una única request compartida por N sensores con `value_template`. SSE necesitaría custom component. A 15 s × ~600 B = irrelevante.
+
+### Gotcha que costó tiempo: `restrict` deshabilita port forwarding
+
+`restrict,permitopen="127.0.0.1:9123" ssh-ed25519 ...` parece correcto pero **falla silenciosamente** con `administratively prohibited: open failed`. El cliente conecta, autentica, abre el listener local, pero al cruzar a wallabot sshd corta el canal.
+
+`restrict` (OpenSSH ≥ 7.6) es "disable everything"; `permitopen` solo *limita* el destino del forwarding pero NO lo *reactiva*. Hay que añadir `port-forwarding` explícito:
+
+```
+restrict,port-forwarding,permitopen="127.0.0.1:9123" ssh-ed25519 AAAA... raspihome-gpu-tunnel
+```
+
+Misma lógica con la versión reverse: `restrict,port-forwarding,permitlisten="9123"`. Sin `port-forwarding`, todo lo demás es decorativo.
+
+### HA en Docker con `--network host`
+
+`docker inspect homeassistant` → `NetworkMode=host`. Por eso `127.0.0.1:9123` desde dentro del contenedor llega al loopback de raspihome y al túnel. Si HA estuviera en bridge, habría que usar `host.docker.internal` o la IP del docker0 (`172.17.0.1`).
+
+### Schema replication
+
+Igual que con `front-mac/Models.swift`: si añades un campo a `Snapshot` / `Gpu` / `Process` en `gpu-monitor-core`, **replícalo en `home-assistant/packages/gpu_monitor.yaml`** como nuevo `value_template`. El package YAML asume el shape del JSON; un campo nuevo en Rust no aparece automáticamente en HA.
+
+### Convenciones internas
+
+- **Clave dedicada al túnel**, no la personal. `~/.ssh/id_ed25519_gpu_tunnel` sin passphrase, restringida en `authorized_keys` de wallabot. La clave personal del usuario suele tener passphrase y no la queremos en un servicio 24/7.
+- **User systemd unit + linger**, no system unit. Se instala en `~/.config/systemd/user/` y necesita `loginctl enable-linger raspihome` una vez para sobrevivir sin sesión activa.
+- **`ssh wallabot@wallabot` inline en el `.service`**, no `~/.ssh/config`. El alias en config es más limpio pero tocar el config preexistente del usuario es invasivo. Todas las opciones (`-i`, `-o IdentitiesOnly=yes`, etc.) van inline.
+- **Healthz vive en raíz, no en `/v1/`**. `/healthz` → 200, `/v1/healthz` → 404. Solo para verificación de túnel, no afecta al package YAML (que usa `/v1/snapshot`).
+
 ## Convenciones del repo
 
 - **API versioning** por prefijo de path (`/v1/...`). Romper compat = subir a `/v2/`. `gpu_monitor_core::API_VERSION` es la fuente de verdad.
