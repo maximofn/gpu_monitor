@@ -17,13 +17,15 @@ Real-time NVIDIA GPU monitor for Linux. Split into a small backend daemon that r
    NVIDIA driver                              GNOME / KDE panel
 ```
 
-Both binaries are written in Rust. They live in a single Cargo workspace under `crates/`:
+Both Rust binaries live in a single Cargo workspace under `crates/`:
 
 - `gpu-monitor-core` — shared `Snapshot` / `Gpu` / `Process` types serialised with `serde`.
 - `gpu-monitord` — backend daemon. Initialises NVML once at start, samples every second on a tokio task, holds the latest snapshot in a `watch` channel, serves it over REST + Server-Sent Events. Defaults to `127.0.0.1:9123`.
 - `gpu-monitor-tray` — Linux system-tray frontend. Subscribes to `/v1/stream`, composes a per-GPU icon (base PNG + temperature label + donut chart) with `tiny-skia`, writes it to `~/.cache/gpu-monitor/icons/` and publishes it as a StatusNotifierItem via `ksni`. Per-GPU submenu with temp / utilisation / memory / power / processes.
 
-Splitting the daemon from the UI lets another machine on the LAN consume the same metrics — a remote frontend (Mac, Windows, web) just hits the API. Only the local Linux frontend is implemented today.
+A native macOS frontend lives in `front-mac/` as an independent Swift Package (Swift + AppKit + CoreGraphics, zero third-party deps). It consumes the same `/v1/stream` endpoint and renders into the macOS menubar via `NSStatusItem`. See [`front-mac/README.md`](front-mac/README.md).
+
+Splitting the daemon from the UI lets another machine on the LAN consume the same metrics — a remote frontend just hits the API. The Mac frontend can connect directly when the daemon binds LAN, or through SSH port forwarding while the daemon stays on `127.0.0.1`.
 
 ### Why a PNG file instead of an SNI in-memory pixmap?
 
@@ -113,11 +115,29 @@ See [`docs/api.md`](docs/api.md) for the full schema and endpoint reference. Qui
 | `GET /v1/gpus/{idx}/processes` | process list |
 | `GET /v1/stream` | SSE — one snapshot per event |
 
+## macOS frontend
+
+```bash
+cd front-mac
+./scripts/build-app.sh
+open "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
+```
+
+The daemon defaults to binding `127.0.0.1` (no auth). To consume metrics from a remote Linux box without exposing the API on the LAN, forward the port over SSH:
+
+```bash
+ssh -fN -L 9123:127.0.0.1:9123 <ubuntu-host>
+open "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
+```
+
+Requires macOS 13 or later. The app is menubar-only (`LSUIElement=true`): no Dock icon, no window. Click the icon for a per-GPU submenu with the same data the Linux tray exposes.
+
 ## Roadmap
 
-- v2.0: Linux tray frontend (this release)
-- v2.1: Auth token + LAN bind for remote consumption
-- v2.2: macOS / Windows tray frontends consuming the same backend
+- v2.0: Linux tray frontend (released)
+- v2.1: macOS menubar frontend (`front-mac/`, released)
+- v2.2: Auth token + LAN bind for remote consumption
+- v2.3: Windows tray frontend
 
 ## Legacy Python script
 

@@ -29,14 +29,38 @@ cargo fmt --all                              # formateo
 
 `gpu_monitor.py` (legacy) sigue funcional y puede correr en paralelo a la versión Rust mientras dure la migración. No los pongas a usar el mismo `--port`.
 
+### Frontend macOS (`front-mac/`)
+
+Swift Package independiente. **No vive en el workspace Cargo** — es Swift + AppKit, sin deps externas.
+
+```bash
+cd front-mac
+swift build -c release                       # binario en .build/release/GPUMonitorTray
+./scripts/build-app.sh                       # empaqueta "GPU Monitor.app" en build/
+open "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
+
+# Volcar el icono renderizado a un PNG (mismo flag que el tray Linux):
+./.build/release/GPUMonitorTray --backend-url http://127.0.0.1:9123 --dump-icon /tmp/icon.png
+```
+
+El backend bindea `127.0.0.1` por defecto (ver "Defaults seguros"). Para acceder desde el Mac al daemon en otra máquina sin abrir el bind LAN, **SSH port forward**:
+
+```bash
+ssh -fN -L 9123:127.0.0.1:9123 <ubuntu-host>
+open "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
+```
+
+Tras tocar código Swift hay que **re-empaquetar el `.app`** (`./scripts/build-app.sh`) — `swift build` solo regenera `.build/release/GPUMonitorTray`, no copia el binario al bundle. Lanzar `open GPU Monitor.app` con el bundle viejo es la confusión #1 cuando algo "no se actualiza".
+
 ## Arquitectura
 
-Workspace Cargo con tres crates:
+Workspace Cargo con tres crates Rust + un Swift Package separado:
 
 ```
 crates/gpu-monitor-core    →  tipos compartidos (serde Snapshot/Gpu/Process)
 crates/gpu-monitord        →  daemon HTTP+SSE que lee NVML
 crates/gpu-monitor-tray    →  frontend Linux (system tray)
+front-mac/                 →  frontend macOS (Swift + AppKit, NSStatusItem)
 ```
 
 El protocolo de datos es REST + Server-Sent Events sobre HTTP. La razón del split no es estética: permite que un frontend remoto (Mac/Windows/web, en planificación) consuma las mismas métricas. El backend está pensado para correr 24/7 en la máquina con GPUs mientras los frontends locales o remotos van y vienen.
@@ -76,10 +100,48 @@ Las dos están testeadas. Si añades una nueva ruta de salida, comprueba qué es
 
 Texto: `fontdue` con DejaVu Sans Mono **Regular** y tamaño `0.50 * h` (mismo perfil que el tray Python con PIL/freetype). `fontdue` aplica hinting TrueType, que es lo que mantiene los strokes finos pixel-aligned y nítidos a 11 px. Versiones previas usaban `ab_glyph` (sin hinting) con Bold + gamma `coverage.sqrt()` para compensar; el resultado era texto gordo y borroso comparado con el Python original. Si vuelves a `ab_glyph` o desactivas hinting, el texto pierde definición — verifícalo con `--dump-icon` antes de mergear. La fuente se busca en una lista de paths candidatos en `DEFAULT_FONT_PATHS`; si falta, requiere `fonts-dejavu-core`.
 
+### Frontend macOS (`front-mac/`)
+
+Swift Package con un único target ejecutable. Sin deps externas — todo lo que se usa viene del SDK (Foundation, AppKit, CoreGraphics, CoreText, ImageIO).
+
+`Sources/GPUMonitorTray/`:
+- `main.swift` — entry point. `NSApp.run()` en modo normal; `--dump-icon` corre síncrono y sale.
+- `AppDelegate.swift` — instala `StatusBarController` + bridge AsyncStream entre el callback Sendable del cliente SSE y el consumidor `@MainActor`.
+- `Config.swift` — parser CLI hecho a mano (sin `swift-argument-parser`). Flags: `--backend-url`, `--icon-height`, `--log-level`, `--dump-icon`, `--version`.
+- `Models.swift` — `Codable` que reflejan `gpu-monitor-core::model`. Si tocas el schema en Rust, replica aquí.
+- `Client.swift` — `actor SSEClient` con `URLSession.bytes(for:)` + backoff 1→2→4→5s.
+- `IconRenderer.swift` — CoreGraphics + CoreText. Render a 2× para Retina, devuelve `NSImage` con `size` lógico.
+- `StatusBarController.swift` — `@MainActor` envoltorio de `NSStatusItem` + `NSMenu`.
+
+#### Punto crítico #1: `Foundation.AsyncBytes.lines` colapsa los `\n\n`
+
+El protocolo SSE separa eventos con una línea en blanco. **`bytes.lines` no la entrega nunca** — colapsa cualquier secuencia de saltos consecutivos, así que el "flush trigger" canónico jamás dispara. La consecuencia es que el cliente parece conectado (recibe líneas `data:`) pero nunca decodifica un `Snapshot`.
+
+Solución: **decodificar después de cada línea `data:`**. `gpu-monitord` envía un `Snapshot` completo por línea, así que el JSON siempre es self-contained. Si en el futuro pasamos a multi-line `data:` habrá que volver al flush por blank-line con un parser de `bytes` crudos (no `.lines`).
+
+#### Punto crítico #2: NO hagas KVO sobre `effectiveAppearance`
+
+Un commit anterior observaba `statusItem.button.effectiveAppearance` para repintar al cambiar light↔dark. Resultado: **CPU sostenida al 85–95%**. AppKit re-evalúa `effectiveAppearance` durante repaints normales, y cualquier reacción ahí entra en bucle: `set image → repaint → KVO → re-render → set image`.
+
+Solución: suscribirse a `DistributedNotificationCenter` con `AppleInterfaceThemeChangedNotification`. Es el evento del sistema, no se dispara en repaints. Adicionalmente hay dedupe de renders: si los inputs visibles (idx, temp, %mem redondeado, appearance) no cambian, se salta tanto el `CGContext` como el `setImage`. A 1 Hz la mayoría de ticks tienen estado idéntico.
+
+#### Punto crítico #3: bundle `.app` ≠ binario de `swift build`
+
+`swift build -c release` actualiza `.build/release/GPUMonitorTray`. **No toca** el binario dentro de `build/GPU Monitor.app/Contents/MacOS/`. Si lanzas el `.app` después de cambiar código, sigue corriendo la versión vieja y nada parece tener efecto. Siempre `./scripts/build-app.sh` antes de `open` cuando hayas editado fuentes.
+
+#### Otras decisiones
+
+- **`NSStatusItem.variableLength`** para acomodar iconos multi-GPU. Sin esto, macOS recorta a un cuadrado.
+- **`NSImage.isTemplate = false`**: el icono lleva colores propios (donut + base PNG). Si lo pones a `true`, macOS lo tiñe con el accent del sistema y pierdes el código de colores.
+- **Texto blanco hardcoded**: `NSStatusBarButton.effectiveAppearance` discrepa del color visible de la barra (hereda de `NSApp`). Detectar dynamically devolvía `.light` incluso en barra oscura. La solución probada: blanco siempre, que combina con cualquier wallpaper razonable y mantiene legibilidad.
+- **`monospacedDigitSystemFont`** para el label numérico — coincide con el formato del reloj y la batería del sistema. Se nota.
+- **`--dump-icon` síncrono**: usar `URLSession.shared.dataTask` con `semaphore.wait()` en main thread bloquea el `MainActor` y la task del renderer nunca corre. Solución: `Data(contentsOf:)` síncrono + `CGImageDestination` para escribir el PNG.
+- **`LSUIElement = true`** en `Info.plist`: app menubar-only, sin Dock icon, sin menú "Aplicación".
+
 ## Convenciones del repo
 
 - **API versioning** por prefijo de path (`/v1/...`). Romper compat = subir a `/v2/`. `gpu_monitor_core::API_VERSION` es la fuente de verdad.
-- **Tipos serializados** viven en `gpu-monitor-core`. Si añades un campo a `Snapshot` / `Gpu` / `Process`, tanto backend como tray lo ven sin drift, pero **es un cambio de schema** — clientes externos pueden romperse.
+- **Tipos serializados** viven en `gpu-monitor-core`. Si añades un campo a `Snapshot` / `Gpu` / `Process`, tanto backend como tray lo ven sin drift, pero **es un cambio de schema** — clientes externos pueden romperse. **Acuérdate de replicarlo también en `front-mac/Sources/GPUMonitorTray/Models.swift`** — Swift no comparte el crate `gpu-monitor-core`, así que cualquier campo nuevo es un cambio paralelo manual.
 - **Defaults seguros**: el daemon bindea `127.0.0.1` sin auth. Cuando se añada bind LAN (roadmap v2.1), `--auth-token` debe ser obligatorio si `--bind != 127.0.0.1`.
 - **Dependencias compartidas** declaradas en `[workspace.dependencies]` del `Cargo.toml` raíz; los crates las referencian con `{ workspace = true }`. Solo añade deps específicas al `Cargo.toml` del crate cuando solo lo use ese crate.
 - **Logging** vía `tracing` + `tracing-subscriber` en ambos binarios; controlable con `RUST_LOG` o `--log-level`.
