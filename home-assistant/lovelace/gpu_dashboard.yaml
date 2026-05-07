@@ -1,11 +1,11 @@
 # Vistas Lovelace para los monitores de la familia (formato `sections`,
-# HA 2024+). Incluye GPU + CPU en un solo `views:` para pegar de una vez en
-# Settings → Dashboards → Edit dashboard → tres puntos → Raw configuration
-# editor.
+# HA 2024+). Incluye GPU + CPU + RAM en un solo `views:` para pegar de una
+# vez en Settings → Dashboards → Edit dashboard → tres puntos → Raw
+# configuration editor.
 #
-# La vista CPU asume que el paquete `cpu_monitor.yaml` también está
-# desplegado (`cpu_monitor` repo, `home-assistant/packages/`). Si solo
-# tienes GPU, borra el bloque "type: sections / title: CPU" del final.
+# Cada bloque "type: sections" referencia las entidades del paquete del
+# monitor correspondiente. Si solo tienes GPU desplegado, borra los bloques
+# CPU y RAM del final (las entidades aparecerían como unavailable).
 
 views:
   - type: sections
@@ -189,3 +189,69 @@ views:
               - sensor.cpu_temperature
               - sensor.cpu_frequency
               - sensor.cpu_load_1m
+
+  - type: sections
+    title: RAM
+    path: ram
+    icon: mdi:memory
+    header:
+      card:
+        type: markdown
+        text_only: true
+        content: |
+          # {{ states('sensor.ram_monitor_host') }}
+          {{ states('sensor.ram_monitor_total') }} GiB total · kernel `{{ states('sensor.ram_monitor_kernel') }}`
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Memoria
+            heading_style: title
+            icon: mdi:memory
+          - type: gauge
+            entity: sensor.ram_used_percent
+            name: Uso
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 90
+          - type: gauge
+            entity: sensor.swap_used_percent
+            name: Swap
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 30
+              red: 70
+          - type: tile
+            entity: sensor.ram_used
+          - type: tile
+            entity: sensor.ram_available
+          - type: tile
+            entity: sensor.ram_free
+          - type: tile
+            entity: sensor.ram_cached
+          - type: tile
+            entity: sensor.ram_buffers
+          - type: tile
+            entity: sensor.swap_used
+          - type: tile
+            entity: sensor.swap_total
+          - type: tile
+            entity: sensor.ram_top_process
+          - type: tile
+            entity: sensor.ram_top_process_rss
+          - type: tile
+            entity: sensor.ram_process_count
+          - type: history-graph
+            hours_to_show: 6
+            grid_options:
+              columns: full
+            entities:
+              - sensor.ram_used_percent
+              - sensor.ram_used
+              - sensor.ram_cached
+              - sensor.swap_used_percent
