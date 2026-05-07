@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maximofn.gpu-monitor-tray</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/macm1/Documents/proyectos/system-monitor/gpu_monitor/front-mac/build/GPU Monitor.app/Contents/MacOS/gpu-monitor-tray-mac</string>
+        <string>--backend-url</string>
+        <string>http://127.0.0.1:9123</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardOutPath</key>
+    <string>/Users/macm1/Library/Logs/gpu-monitor-tray.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/macm1/Library/Logs/gpu-monitor-tray.err.log</string>
+</dict>
+</plist>
