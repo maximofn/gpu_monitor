@@ -483,6 +483,24 @@ Tres claves importantes:
 
 `ssh-agent` no se invoca explícitamente — macOS expone el agente del Keychain en `SSH_AUTH_SOCK` para LaunchAgents de la sesión GUI, así que las claves `~/.ssh/id_*` desbloqueadas en login se usan transparentes. Si tu clave tiene passphrase y no está en el Keychain, el agent fallará silencioso al login y verás `Permission denied (publickey)` en `~/Library/Logs/gpu-monitor-tunnel.err.log`.
 
+**Añade `StrictHostKeyChecking=accept-new`** al plist. Sin esto, si el host nunca apareció en `~/.ssh/known_hosts` (Mac recién migrado, primera vez que el túnel sube), `ssh` se queda esperando un "yes" interactivo que nadie va a teclear y el túnel queda colgado para siempre. `accept-new` añade la huella la primera vez sin prompt, pero rechaza si la huella *cambia* (que es lo que quieres detectar — un MITM, no un host nuevo conocido).
+
+### **Empaqueta el plist + install script del túnel junto al del tray**
+
+Cuando `gpu_monitor` documentaba el túnel como bloque XML inline en el README, terminé re-derivando el plist a mano para `cpu_monitor` y escribiendo un `install-tunnel.sh` paralelo a `install-launchagent.sh`. Tres minutos de pegar XML, sí, pero tres minutos por monitor que se multiplican y un sitio más donde tener el plist mal copiado.
+
+**Patrón ya validado para esta familia**: cada `front-mac/scripts/` lleva DOS pares plist+script:
+
+```
+scripts/
+├── com.maximofn.<monitor>-tray.plist        + install-launchagent.sh
+└── com.maximofn.<monitor>-tunnel.plist      + install-tunnel.sh
+```
+
+Ambos scripts son idempotentes (bootout antes de bootstrap si ya existe), aceptan `uninstall`, y usan el mismo flujo `bootstrap` + `enable` + `kickstart -k` (no `launchctl load -w`, que está deprecado). El plist del túnel viene pre-rellenado con el host SSH del autor; el README explica el `sed` de una línea para reapuntarlo.
+
+Hay que mantener los **puertos sincronizados** entre el plist del túnel (`-L PUERTO:127.0.0.1:PUERTO`) y `<monitor>_core::DEFAULT_PORT`. Es un sitio fácil de olvidar al subir el bind LAN o al cambiar de puerto — si el daemon mueve a 9130 y el plist sigue forwardeando 9124, el tray se queda en "connecting" eternamente sin error claro porque el puerto local existe pero no llega al daemon.
+
 ### Autostart del tray macOS — LaunchAgent al binario del bundle, no a `open`
 
 Para que el tray arranque al login en el Mac hay un LaunchAgent paralelo al del túnel: `front-mac/scripts/com.maximofn.gpu-monitor-tray.plist`. Cosas no obvias del patrón:
