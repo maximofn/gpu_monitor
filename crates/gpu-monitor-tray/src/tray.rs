@@ -225,7 +225,7 @@ fn gpu_submenu(gpu: &Gpu) -> SubMenu<GpuTray> {
         gpu.temperature_c.unwrap_or(0)
     )));
     entries.push(disabled_item(format!(
-        "Utilization: GPU {}% / Mem {}%",
+        "Utilization: GPU {}% / Mem I/O {}%",
         gpu.utilization.gpu_percent, gpu.utilization.memory_percent
     )));
     entries.push(disabled_item(format!(

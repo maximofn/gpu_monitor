@@ -165,7 +165,7 @@ final class StatusBarController: NSObject {
         m.autoenablesItems = false
         m.addItem(disabledItem("Temperature: \(gpu.temperatureC ?? 0)°C"))
         m.addItem(disabledItem(
-            "Utilization: GPU \(gpu.utilization.gpuPercent)% / Mem \(gpu.utilization.memoryPercent)%"
+            "Utilization: GPU \(gpu.utilization.gpuPercent)% / Mem I/O \(gpu.utilization.memoryPercent)%"
         ))
         m.addItem(disabledItem("Memory used: \(formatBytes(gpu.memory.usedBytes))"))
         m.addItem(disabledItem("Memory free: \(formatBytes(gpu.memory.freeBytes))"))
