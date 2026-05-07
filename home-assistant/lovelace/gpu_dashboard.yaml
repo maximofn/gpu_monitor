@@ -1,11 +1,15 @@
 # Vistas Lovelace para los monitores de la familia (formato `sections`,
-# HA 2024+). Incluye GPU + CPU + RAM en un solo `views:` para pegar de una
-# vez en Settings → Dashboards → Edit dashboard → tres puntos → Raw
+# HA 2024+). Incluye GPU + CPU + RAM + Disk en un solo `views:` para pegar
+# de una vez en Settings → Dashboards → Edit dashboard → tres puntos → Raw
 # configuration editor.
 #
 # Cada bloque "type: sections" referencia las entidades del paquete del
 # monitor correspondiente. Si solo tienes GPU desplegado, borra los bloques
-# CPU y RAM del final (las entidades aparecerían como unavailable).
+# CPU/RAM/Disk del final (las entidades aparecerían como unavailable).
+#
+# La vista Disk asume mounts hardcodeados (`/` y
+# `/media/wallabot/seagate2T`) — adapta los entity ids si el paquete está
+# personalizado para otros mounts.
 
 views:
   - type: sections
@@ -255,3 +259,89 @@ views:
               - sensor.ram_used
               - sensor.ram_cached
               - sensor.swap_used_percent
+
+  - type: sections
+    title: Disk
+    path: disk
+    icon: mdi:harddisk
+    header:
+      card:
+        type: markdown
+        text_only: true
+        content: |
+          # {{ states('sensor.disk_monitor_host') }}
+          {{ states('sensor.disk_monitor_mount_count') }} mounts
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: "/"
+            heading_style: title
+            icon: mdi:harddisk
+          - type: gauge
+            entity: sensor.disk_root_used_percent
+            name: Uso /
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 90
+          - type: tile
+            entity: sensor.disk_root_used
+          - type: tile
+            entity: sensor.disk_root_free
+          - type: tile
+            entity: sensor.disk_root_total
+          - type: tile
+            entity: sensor.disk_root_device
+          - type: tile
+            entity: sensor.disk_root_filesystem
+          - type: tile
+            entity: sensor.disk_root_largest_file
+          - type: tile
+            entity: sensor.disk_root_largest_file_size
+          - type: history-graph
+            hours_to_show: 72
+            grid_options:
+              columns: full
+            entities:
+              - sensor.disk_root_used_percent
+              - sensor.disk_root_used
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: "Seagate 2T (/media/wallabot/seagate2T)"
+            heading_style: title
+            icon: mdi:harddisk
+          - type: gauge
+            entity: sensor.disk_seagate2t_used_percent
+            name: Uso Seagate
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 90
+          - type: tile
+            entity: sensor.disk_seagate2t_used
+          - type: tile
+            entity: sensor.disk_seagate2t_free
+          - type: tile
+            entity: sensor.disk_seagate2t_total
+          - type: tile
+            entity: sensor.disk_seagate2t_device
+          - type: tile
+            entity: sensor.disk_seagate2t_filesystem
+          - type: tile
+            entity: sensor.disk_seagate2t_largest_file
+          - type: tile
+            entity: sensor.disk_seagate2t_largest_file_size
+          - type: history-graph
+            hours_to_show: 72
+            grid_options:
+              columns: full
+            entities:
+              - sensor.disk_seagate2t_used_percent
+              - sensor.disk_seagate2t_used
