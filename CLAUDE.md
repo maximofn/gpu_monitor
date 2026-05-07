@@ -54,6 +54,20 @@ Para que el túnel sobreviva a reinicios y reconecte solo, hay un LaunchAgent en
 
 Tras tocar código Swift hay que **re-empaquetar el `.app`** (`./scripts/build-app.sh`) — `swift build` solo regenera `.build/release/GPUMonitorTray`, no copia el binario al bundle. Lanzar `open GPU Monitor.app` con el bundle viejo es la confusión #1 cuando algo "no se actualiza".
 
+#### Autoarranque al login
+
+LaunchAgent en `front-mac/scripts/com.maximofn.gpu-monitor-tray.plist`. Se instala con:
+
+```bash
+cd front-mac
+./scripts/install-launchagent.sh            # bootstrap + kickstart, queda activo
+./scripts/install-launchagent.sh uninstall  # bootout + borra el plist
+```
+
+Lanza el binario **del bundle** (`build/GPU Monitor.app/Contents/MacOS/gpu-monitor-tray-mac`) directamente, no `open`. `Bundle.main` resuelve el `Info.plist` del `.app` padre, así que `LSUIElement = true` sigue aplicando — sin Dock icon, sin menú "Aplicación". `KeepAlive = false` deliberado: si el usuario cierra desde el menú, launchd no relanza. Logs en `~/Library/Logs/gpu-monitor-tray.{out,err}.log`.
+
+Tras re-empaquetar con `build-app.sh` **no hay que reinstalar el agent** (la ruta absoluta del bundle no cambia), pero sí conviene `launchctl kickstart -k gui/$(id -u)/com.maximofn.gpu-monitor-tray` para que la app reinicie con el binario nuevo. Si mueves el repo de directorio, sí hay que reinstalar — la ruta vive hardcoded en el plist.
+
 ## Arquitectura
 
 Workspace Cargo con tres crates Rust + un Swift Package separado:

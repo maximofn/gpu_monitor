@@ -132,6 +132,16 @@ open "build/GPU Monitor.app" --args --backend-url http://127.0.0.1:9123
 
 Requires macOS 13 or later. The app is menubar-only (`LSUIElement=true`): no Dock icon, no window. Click the icon for a per-GPU submenu with the same data the Linux tray exposes.
 
+To auto-start the tray on login, install the bundled LaunchAgent:
+
+```bash
+cd front-mac
+./scripts/install-launchagent.sh             # install + load now
+./scripts/install-launchagent.sh uninstall   # remove
+```
+
+Logs land in `~/Library/Logs/gpu-monitor-tray.{out,err}.log`. The agent expects the backend reachable at `http://127.0.0.1:9123` — pair it with the SSH-tunnel LaunchAgent (`com.maximofn.gpu-monitor-tunnel`) when the daemon runs on a remote host.
+
 ## Roadmap
 
 - v2.0: Linux tray frontend (released)

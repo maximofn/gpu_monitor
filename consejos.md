@@ -483,6 +483,19 @@ Tres claves importantes:
 
 `ssh-agent` no se invoca explícitamente — macOS expone el agente del Keychain en `SSH_AUTH_SOCK` para LaunchAgents de la sesión GUI, así que las claves `~/.ssh/id_*` desbloqueadas en login se usan transparentes. Si tu clave tiene passphrase y no está en el Keychain, el agent fallará silencioso al login y verás `Permission denied (publickey)` en `~/Library/Logs/gpu-monitor-tunnel.err.log`.
 
+### Autostart del tray macOS — LaunchAgent al binario del bundle, no a `open`
+
+Para que el tray arranque al login en el Mac hay un LaunchAgent paralelo al del túnel: `front-mac/scripts/com.maximofn.gpu-monitor-tray.plist`. Cosas no obvias del patrón:
+
+- **Lanzar el binario del bundle directamente**, no `open "GPU Monitor.app"`. launchd y `open` se llevan mal: `open` retorna inmediatamente y launchd cree que el proceso ha muerto, lo que combinado con `KeepAlive` da reinicios en bucle. La ruta correcta es `Contents/MacOS/gpu-monitor-tray-mac` como `ProgramArguments[0]`. `Bundle.main` resuelve el `Info.plist` del `.app` padre igual, así que `LSUIElement = true` se aplica y no aparece icono en el Dock.
+- **`KeepAlive = false`** explícito. Con `true`, si el usuario cierra la app desde el menú (acción legítima), launchd la relanza al instante — UX rota. `RunAtLoad = true` + `KeepAlive = false` da el comportamiento correcto: arranca al login, se queda fuera si el usuario lo decide.
+- **`ProcessType = Interactive`** para que macOS no le aplique throttling de tarea de fondo. Sin esto, el sampler SSE sufre pausas raras cuando el sistema está bajo carga.
+- **Flujo `bootstrap` + `enable` + `kickstart -k`**, no el viejo `launchctl load -w`. `load` está deprecado desde Catalina y silencia errores que `bootstrap` reporta.
+- **Ruta absoluta hardcoded**: si mueves el repo de directorio, el plist apunta al bundle en la ubicación vieja y la app no arranca. El script de instalación debe reinstalarse (`./scripts/install-launchagent.sh`) tras mover.
+- **Re-empaquetar el `.app` no requiere reinstalar el agent** (la ruta no cambia), pero sí `launchctl kickstart -k gui/$(id -u)/<label>` para que el tray corra el binario nuevo. Sin kickstart sigues con el binario que estaba en memoria al arrancar la sesión.
+
+Para CPU/RAM/disk en macOS aplica el mismo patrón cuando llegues a portar — un LaunchAgent por monitor lanzando el binario del bundle correspondiente.
+
 #### El donut gris al 0% no significa "sin datos"
 
 Primer intento del estado disconnected en macOS: pintar el donut con `usedPercent=0` y palette atenuada (`#808080` libre, `#606060` usado). Visualmente: un anillo gris cerrado. **Se lee como "0% de uso real" en gris**, no como "sin datos". El usuario lo dijo en cuanto lo vio.
