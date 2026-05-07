@@ -1,0 +1,253 @@
+# GPU Monitor — paquete Home Assistant
+#
+# Drop-in para `packages/gpu_monitor.yaml`. Consume /v1/snapshot del daemon
+# `gpu-monitord` y expone una entidad por métrica y GPU.
+#
+# Asume conectividad a http://127.0.0.1:9123 desde el contenedor HA. Si el
+# daemon vive en otra máquina, monta un túnel SSH inverso desde ese host hasta
+# raspihome (ver home-assistant/tunnel/ en el repo).
+#
+# Definido para 2 GPUs (índices 0 y 1). Para añadir GPU 2, copia el bloque
+# "GPU 1" entero, sustituye `gpus[1]` por `gpus[2]` y `gpu1` por `gpu2` en
+# los `unique_id`.
+
+rest:
+  - resource: http://127.0.0.1:9123/v1/snapshot
+    scan_interval: 15
+    timeout: 5
+    sensor:
+      # ---------- Datos de host ----------
+      - name: "GPU Monitor Host"
+        unique_id: gpu_monitor_host
+        value_template: "{{ value_json.host }}"
+        icon: mdi:server
+
+      - name: "GPU Monitor Driver"
+        unique_id: gpu_monitor_driver
+        value_template: "{{ value_json.driver_version }}"
+        icon: mdi:chip
+
+      - name: "GPU Monitor CUDA"
+        unique_id: gpu_monitor_cuda
+        value_template: "{{ value_json.cuda_version }}"
+        icon: mdi:nvidia
+
+      - name: "GPU Monitor Count"
+        unique_id: gpu_monitor_count
+        value_template: "{{ value_json.gpus | length }}"
+        state_class: measurement
+        icon: mdi:counter
+
+      # ---------- GPU 0 ----------
+      - name: "GPU 0 Name"
+        unique_id: gpu_monitor_gpu0_name
+        value_template: >-
+          {{ value_json.gpus[0].name if value_json.gpus | length > 0 else None }}
+        icon: mdi:expansion-card
+
+      - name: "GPU 0 Temperature"
+        unique_id: gpu_monitor_gpu0_temperature
+        value_template: >-
+          {{ value_json.gpus[0].temperature_c if value_json.gpus | length > 0 else None }}
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+
+      - name: "GPU 0 Fan Speed"
+        unique_id: gpu_monitor_gpu0_fan
+        value_template: >-
+          {{ value_json.gpus[0].fan_speed_percent if value_json.gpus | length > 0 else None }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:fan
+
+      - name: "GPU 0 Power Draw"
+        unique_id: gpu_monitor_gpu0_power_draw
+        value_template: >-
+          {{ value_json.gpus[0].power_draw_w if value_json.gpus | length > 0 else None }}
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+
+      - name: "GPU 0 Power Limit"
+        unique_id: gpu_monitor_gpu0_power_limit
+        value_template: >-
+          {{ value_json.gpus[0].power_limit_w if value_json.gpus | length > 0 else None }}
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+
+      - name: "GPU 0 Utilization"
+        unique_id: gpu_monitor_gpu0_util
+        value_template: >-
+          {{ value_json.gpus[0].utilization.gpu_percent if value_json.gpus | length > 0 else None }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:speedometer
+
+      - name: "GPU 0 Memory Utilization"
+        unique_id: gpu_monitor_gpu0_mem_util
+        value_template: >-
+          {{ value_json.gpus[0].utilization.memory_percent if value_json.gpus | length > 0 else None }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:memory
+
+      - name: "GPU 0 Memory Used"
+        unique_id: gpu_monitor_gpu0_mem_used
+        value_template: >-
+          {% if value_json.gpus | length > 0 -%}
+          {{ (value_json.gpus[0].memory.used_bytes / 1048576) | round(0) }}
+          {%- endif %}
+        unit_of_measurement: "MiB"
+        device_class: data_size
+        state_class: measurement
+
+      - name: "GPU 0 Memory Total"
+        unique_id: gpu_monitor_gpu0_mem_total
+        value_template: >-
+          {% if value_json.gpus | length > 0 -%}
+          {{ (value_json.gpus[0].memory.total_bytes / 1048576) | round(0) }}
+          {%- endif %}
+        unit_of_measurement: "MiB"
+        device_class: data_size
+        state_class: measurement
+
+      - name: "GPU 0 Memory Used Percent"
+        unique_id: gpu_monitor_gpu0_mem_used_pct
+        value_template: >-
+          {% if value_json.gpus | length > 0 and value_json.gpus[0].memory.total_bytes > 0 -%}
+          {{ (value_json.gpus[0].memory.used_bytes * 100 / value_json.gpus[0].memory.total_bytes) | round(1) }}
+          {%- endif %}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:memory
+
+      - name: "GPU 0 Process Count"
+        unique_id: gpu_monitor_gpu0_proc_count
+        value_template: >-
+          {% if value_json.gpus | length > 0 -%}
+          {{ value_json.gpus[0].processes | length }}
+          {%- endif %}
+        state_class: measurement
+        icon: mdi:format-list-numbered
+
+      - name: "GPU 0 Top Process"
+        unique_id: gpu_monitor_gpu0_top_process
+        value_template: >-
+          {% if value_json.gpus | length > 0 and value_json.gpus[0].processes | length > 0 -%}
+          {{ (value_json.gpus[0].processes | sort(attribute='used_memory_bytes', reverse=true) | first).name }}
+          {%- else -%}
+          none
+          {%- endif %}
+        json_attributes_path: "$.gpus[0]"
+        json_attributes:
+          - processes
+        icon: mdi:application-cog
+
+      # ---------- GPU 1 ----------
+      - name: "GPU 1 Name"
+        unique_id: gpu_monitor_gpu1_name
+        value_template: >-
+          {{ value_json.gpus[1].name if value_json.gpus | length > 1 else None }}
+        icon: mdi:expansion-card
+
+      - name: "GPU 1 Temperature"
+        unique_id: gpu_monitor_gpu1_temperature
+        value_template: >-
+          {{ value_json.gpus[1].temperature_c if value_json.gpus | length > 1 else None }}
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+
+      - name: "GPU 1 Fan Speed"
+        unique_id: gpu_monitor_gpu1_fan
+        value_template: >-
+          {{ value_json.gpus[1].fan_speed_percent if value_json.gpus | length > 1 else None }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:fan
+
+      - name: "GPU 1 Power Draw"
+        unique_id: gpu_monitor_gpu1_power_draw
+        value_template: >-
+          {{ value_json.gpus[1].power_draw_w if value_json.gpus | length > 1 else None }}
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+
+      - name: "GPU 1 Power Limit"
+        unique_id: gpu_monitor_gpu1_power_limit
+        value_template: >-
+          {{ value_json.gpus[1].power_limit_w if value_json.gpus | length > 1 else None }}
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+
+      - name: "GPU 1 Utilization"
+        unique_id: gpu_monitor_gpu1_util
+        value_template: >-
+          {{ value_json.gpus[1].utilization.gpu_percent if value_json.gpus | length > 1 else None }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:speedometer
+
+      - name: "GPU 1 Memory Utilization"
+        unique_id: gpu_monitor_gpu1_mem_util
+        value_template: >-
+          {{ value_json.gpus[1].utilization.memory_percent if value_json.gpus | length > 1 else None }}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:memory
+
+      - name: "GPU 1 Memory Used"
+        unique_id: gpu_monitor_gpu1_mem_used
+        value_template: >-
+          {% if value_json.gpus | length > 1 -%}
+          {{ (value_json.gpus[1].memory.used_bytes / 1048576) | round(0) }}
+          {%- endif %}
+        unit_of_measurement: "MiB"
+        device_class: data_size
+        state_class: measurement
+
+      - name: "GPU 1 Memory Total"
+        unique_id: gpu_monitor_gpu1_mem_total
+        value_template: >-
+          {% if value_json.gpus | length > 1 -%}
+          {{ (value_json.gpus[1].memory.total_bytes / 1048576) | round(0) }}
+          {%- endif %}
+        unit_of_measurement: "MiB"
+        device_class: data_size
+        state_class: measurement
+
+      - name: "GPU 1 Memory Used Percent"
+        unique_id: gpu_monitor_gpu1_mem_used_pct
+        value_template: >-
+          {% if value_json.gpus | length > 1 and value_json.gpus[1].memory.total_bytes > 0 -%}
+          {{ (value_json.gpus[1].memory.used_bytes * 100 / value_json.gpus[1].memory.total_bytes) | round(1) }}
+          {%- endif %}
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:memory
+
+      - name: "GPU 1 Process Count"
+        unique_id: gpu_monitor_gpu1_proc_count
+        value_template: >-
+          {% if value_json.gpus | length > 1 -%}
+          {{ value_json.gpus[1].processes | length }}
+          {%- endif %}
+        state_class: measurement
+        icon: mdi:format-list-numbered
+
+      - name: "GPU 1 Top Process"
+        unique_id: gpu_monitor_gpu1_top_process
+        value_template: >-
+          {% if value_json.gpus | length > 1 and value_json.gpus[1].processes | length > 0 -%}
+          {{ (value_json.gpus[1].processes | sort(attribute='used_memory_bytes', reverse=true) | first).name }}
+          {%- else -%}
+          none
+          {%- endif %}
+        json_attributes_path: "$.gpus[1]"
+        json_attributes:
+          - processes
+        icon: mdi:application-cog

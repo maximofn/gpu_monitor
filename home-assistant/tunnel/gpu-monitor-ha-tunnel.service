@@ -1,0 +1,32 @@
+[Unit]
+Description=SSH forward tunnel to GPU host (Home Assistant access to gpu-monitord)
+Documentation=file:///%h/projects/gpu_monitor/home-assistant/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Túnel directo: el puerto 9123 de raspihome (loopback) reenvía al
+# 127.0.0.1:9123 del host con GPU. Como HA corre con --network host, leer
+# 127.0.0.1:9123 desde el contenedor llega aquí.
+#
+# La clave dedicada está restringida en wallabot a `permitopen="127.0.0.1:9123"`,
+# así que esta clave SOLO puede abrir ese forward — no shell, no otros puertos.
+#
+# -N: no comando remoto. -T: sin pty. ServerAlive: detecta cortes en <2 min.
+# ExitOnForwardFailure=yes: si el puerto 9123 ya está ocupado en raspihome,
+# fallamos rápido y systemd reinicia.
+ExecStart=/usr/bin/ssh -N -T \
+    -i %h/.ssh/id_ed25519_gpu_tunnel \
+    -o IdentitiesOnly=yes \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=3 \
+    -o ExitOnForwardFailure=yes \
+    -o StrictHostKeyChecking=accept-new \
+    -L 127.0.0.1:9123:127.0.0.1:9123 \
+    wallabot@wallabot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

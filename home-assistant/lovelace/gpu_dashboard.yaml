@@ -1,0 +1,125 @@
+# Vista Lovelace para el GPU Monitor (formato `sections`, HA 2024+).
+#
+# Pegar como nueva entrada bajo `views:` en Settings → Dashboards → Edit
+# dashboard → tres puntos → Raw configuration editor.
+
+views:
+  - type: sections
+    title: GPUs
+    path: gpus
+    icon: mdi:nvidia
+    header:
+      card:
+        type: markdown
+        text_only: true
+        content: |
+          # {{ states('sensor.gpu_monitor_host') }}
+          Driver `{{ states('sensor.gpu_monitor_driver') }}` · CUDA `{{ states('sensor.gpu_monitor_cuda') }}` · {{ states('sensor.gpu_monitor_count') }} GPUs
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: GPU 0
+            heading_style: title
+            icon: mdi:expansion-card
+          - type: gauge
+            entity: sensor.gpu_0_utilization
+            name: Utilización
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 60
+              red: 85
+          - type: gauge
+            entity: sensor.gpu_0_memory_used_percent
+            name: Memoria
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 90
+          - type: tile
+            entity: sensor.gpu_0_temperature
+          - type: tile
+            entity: sensor.gpu_0_power_draw
+          - type: tile
+            entity: sensor.gpu_0_fan_speed
+          - type: tile
+            entity: sensor.gpu_0_memory_used
+          - type: tile
+            entity: sensor.gpu_0_memory_total
+          - type: tile
+            entity: sensor.gpu_0_top_process
+          - type: tile
+            entity: sensor.gpu_0_process_count
+          - type: tile
+            entity: sensor.gpu_0_name
+          - type: tile
+            entity: sensor.gpu_0_power_limit
+          - type: tile
+            entity: sensor.gpu_0_memory_utilization
+          - type: history-graph
+            hours_to_show: 6
+            grid_options:
+              columns: full
+            entities:
+              - sensor.gpu_0_utilization
+              - sensor.gpu_0_memory_used_percent
+              - sensor.gpu_0_temperature
+              - sensor.gpu_0_power_draw
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: GPU 1
+            heading_style: title
+            icon: mdi:expansion-card
+          - type: gauge
+            entity: sensor.gpu_1_utilization
+            name: Utilización
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 60
+              red: 85
+          - type: gauge
+            entity: sensor.gpu_1_memory_used_percent
+            name: Memoria
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 90
+          - type: tile
+            entity: sensor.gpu_1_temperature
+          - type: tile
+            entity: sensor.gpu_1_power_draw
+          - type: tile
+            entity: sensor.gpu_1_fan_speed
+          - type: tile
+            entity: sensor.gpu_1_memory_used
+          - type: tile
+            entity: sensor.gpu_1_memory_total
+          - type: tile
+            entity: sensor.gpu_1_top_process
+          - type: tile
+            entity: sensor.gpu_1_process_count
+          - type: tile
+            entity: sensor.gpu_1_name
+          - type: tile
+            entity: sensor.gpu_1_power_limit
+          - type: tile
+            entity: sensor.gpu_1_memory_utilization
+          - type: history-graph
+            hours_to_show: 6
+            grid_options:
+              columns: full
+            entities:
+              - sensor.gpu_1_utilization
+              - sensor.gpu_1_memory_used_percent
+              - sensor.gpu_1_temperature
+              - sensor.gpu_1_power_draw
