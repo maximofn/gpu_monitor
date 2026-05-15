@@ -88,8 +88,8 @@ struct IconRenderer {
     /// whose logical size equals (totalLogicalWidth, height). Must run on the
     /// main actor because it constructs an NSImage.
     @MainActor
-    func renderImage(gpus: [GPU], connected: Bool, appearance: IconAppearance) -> NSImage? {
-        guard let result = renderCGImage(gpus: gpus, connected: connected, appearance: appearance) else {
+    func renderImage(gpus: [GPU], connected: Bool, appearance: IconAppearance, compact: Bool = false) -> NSImage? {
+        guard let result = renderCGImage(gpus: gpus, connected: connected, appearance: appearance, compact: compact) else {
             return nil
         }
         let img = NSImage(cgImage: result.cgImage, size: result.logicalSize)
@@ -104,9 +104,10 @@ struct IconRenderer {
         gpus: [GPU],
         connected: Bool,
         to path: String,
-        appearance: IconAppearance = .dark
+        appearance: IconAppearance = .dark,
+        compact: Bool = false
     ) throws {
-        guard let result = renderCGImage(gpus: gpus, connected: connected, appearance: appearance) else {
+        guard let result = renderCGImage(gpus: gpus, connected: connected, appearance: appearance, compact: compact) else {
             throw NSError(domain: "IconRenderer", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "render failed"])
         }
@@ -131,9 +132,9 @@ struct IconRenderer {
 
     /// Pure Core Graphics: no AppKit, no MainActor. Returns nil only on
     /// allocation failures (effectively never).
-    private func renderCGImage(gpus: [GPU], connected: Bool, appearance: IconAppearance) -> RenderResult? {
+    private func renderCGImage(gpus: [GPU], connected: Bool, appearance: IconAppearance, compact: Bool) -> RenderResult? {
         let scale: CGFloat = 2
-        let layout = self.layout(gpus: gpus, scale: scale, connected: connected, appearance: appearance)
+        let layout = self.layout(gpus: gpus, scale: scale, connected: connected, appearance: appearance, compact: compact)
         let pxW = max(1, Int(layout.totalLogicalWidth * scale))
         let pxH = max(1, Int(height * scale))
 
@@ -174,14 +175,17 @@ struct IconRenderer {
         let gpus: [GPU]
         let connected: Bool
         let appearance: IconAppearance
+        let compact: Bool
     }
 
-    private func layout(gpus: [GPU], scale: CGFloat, connected: Bool, appearance: IconAppearance) -> Layout {
+    private func layout(gpus: [GPU], scale: CGFloat, connected: Bool, appearance: IconAppearance, compact: Bool) -> Layout {
         let textPx = textSize(forHeight: height)
-        let probeWidth = measureText("0(00ºC)", size: textPx)
+        let probeWidth = compact ? 0 : measureText("0(00ºC)", size: textPx)
         let donutSize = max(8, height - donutPadding * 2)
         let iconW: CGFloat = baseIcon.map { CGFloat($0.width) / scale } ?? 0
-        let perGPU = iconW + 2 + probeWidth + 2 + donutSize
+        let perGPU: CGFloat = compact
+            ? (iconW + 2 + donutSize)
+            : (iconW + 2 + probeWidth + 2 + donutSize)
         let total: CGFloat
         if gpus.isEmpty {
             // Disconnected / connecting: icon + dash, no donut. The dash signals
@@ -202,7 +206,8 @@ struct IconRenderer {
             textPx: textPx,
             gpus: gpus,
             connected: connected,
-            appearance: appearance
+            appearance: appearance,
+            compact: compact
         )
     }
 
@@ -262,20 +267,24 @@ struct IconRenderer {
             ctx.restoreGState()
         }
 
-        let temp = gpu.temperatureC ?? 0
-        let label = String(format: "%d(%2dºC)", gpu.index, temp)
-        let labelColor = tempLabelColor(connected: layout.connected, appearance: layout.appearance)
-        let textX = x + layout.iconWidth + 2
-        drawText(
-            label,
-            ctx: ctx,
-            x: textX,
-            size: layout.textPx,
-            color: labelColor,
-            blockHeight: height
-        )
+        if !layout.compact {
+            let temp = gpu.temperatureC ?? 0
+            let label = String(format: "%d(%2dºC)", gpu.index, temp)
+            let labelColor = tempLabelColor(connected: layout.connected, appearance: layout.appearance)
+            let textX = x + layout.iconWidth + 2
+            drawText(
+                label,
+                ctx: ctx,
+                x: textX,
+                size: layout.textPx,
+                color: labelColor,
+                blockHeight: height
+            )
+        }
 
-        let donutX = x + layout.iconWidth + 2 + layout.textWidth + 2
+        let donutX = layout.compact
+            ? (x + layout.iconWidth + 2)
+            : (x + layout.iconWidth + 2 + layout.textWidth + 2)
         let usedPct = gpu.memory.usedPercent
         drawDonut(
             ctx: ctx,

@@ -479,6 +479,72 @@ Si ya hay una `GPU Monitor.app` corriendo, `open ... --args --backend-url X` **n
 - `open -n` para forzar una instancia nueva (puedes acabar con dos icons en la barra — mata la vieja antes).
 - Matar la vieja por nombre real (`pkill -f gpu-monitor-tray-mac`) y luego `open` normal.
 
+### Toggle de modo de vista desde el menú (compacto / extendido)
+
+Si el usuario pide poder esconder parte del icono (típicamente el texto numérico de la métrica, dejando solo icono + donut) con un click en el menú del tray, el patrón validado en `front-mac/` es éste — copia tal cual para CPU/RAM/disk:
+
+**1. El renderer acepta un flag `compact: Bool`.** No lo metas como propiedad mutable del renderer — pásalo por parámetro a `renderImage`/`renderPNG`/`renderCGImage` con default `false`. Así el path de `--dump-icon` sigue siendo puro y no depende de UserDefaults.
+
+```swift
+@MainActor
+func renderImage(gpus: [GPU], connected: Bool, appearance: IconAppearance, compact: Bool = false) -> NSImage? { ... }
+```
+
+**2. El `Layout` propaga el flag y `perGPUWidth` se recalcula sin el ancho del texto.** En compact mode el donut se pega al icono, no hay slot reservado para el label de temperatura. La ruta de gpus vacío (disconnected/connecting) NO se ramifica por compact — sigue siendo icono + guion en ambos modos.
+
+```swift
+let probeWidth = compact ? 0 : measureText("0(00ºC)", size: textPx)
+let perGPU: CGFloat = compact
+    ? (iconW + 2 + donutSize)
+    : (iconW + 2 + probeWidth + 2 + donutSize)
+```
+
+**3. En `drawGPUBlock`, si `compact` se salta el `drawText` del label y `donutX` se calcula sin sumar `textWidth + 2`.** Una sola rama, sin duplicar código del donut.
+
+**4. `StatusBarController` guarda `compactMode: Bool` y lo persiste en `UserDefaults`.** Lectura en el `init`, escritura en el toggle. Clave bien-namespaced (`GPUMonitorTray.compactMode` para GPU; usa el suyo en cada monitor):
+
+```swift
+private let compactModeDefaultsKey = "<MonitorName>Tray.compactMode"
+// en init:
+self.compactMode = UserDefaults.standard.bool(forKey: compactModeDefaultsKey)
+```
+
+**5. CRÍTICO: añade `compactMode` al `renderKey`.** El dedupe de renders en `refreshIcon` se hace por hash de inputs visibles; sin esto, tocas el toggle, los inputs "reales" no han cambiado, y el icono no se repinta. Pisado en la primera implementación — `lastRenderedKey` se queda con el hash del modo anterior y la barra muestra el icono viejo hasta que cambia la temperatura.
+
+```swift
+var parts: [String] = ["\(connected)", "\(appearance)", "compact=\(compactMode)"]
+```
+
+Y al togglear, invalida explícitamente además: `lastRenderedKey = ""` antes de llamar `refreshIcon()`. Cinturón y tirantes — el hash nuevo ya difiere pero limpiar es defensivo si en el futuro alguien toca el formato del key.
+
+**6. El item de menú tiene título mutable, no checkbox.** El usuario quiere ver el verbo de la acción ("Cambiar a compacto" / "Cambiar a extendido"), no el estado actual con un tick. Es lo mismo informativamente, pero más directo de leer:
+
+```swift
+let toggleTitle = compactMode ? "Cambiar a extendido" : "Cambiar a compacto"
+let toggle = NSMenuItem(title: toggleTitle, action: #selector(toggleCompactMode), keyEquivalent: "")
+toggle.target = self
+menu.addItem(toggle)
+menu.addItem(.separator())
+```
+
+Colócalo entre el bloque de info y el bloque de acciones globales (Repository / Coffee / Quit) — es una acción de configuración del propio tray, no parte de los datos del recurso.
+
+**7. La acción reconstruye el menú entero, no muta el item.** `refreshMenu()` ya existe — llámalo. NSMenuItem no actualiza bien el título dinámicamente cuando el menú está cacheado por NSStatusItem; recrear el menú completo es cheap y es el patrón consistente con el resto del controller:
+
+```swift
+@objc private func toggleCompactMode() {
+    compactMode.toggle()
+    UserDefaults.standard.set(compactMode, forKey: compactModeDefaultsKey)
+    lastRenderedKey = ""
+    refreshIcon()
+    refreshMenu()
+}
+```
+
+**Aplicabilidad fuera de macOS**: el patrón del flag por parámetro al renderer y persistencia separada en el controller funciona idéntico en el tray Linux (`ksni`). En Linux el storage no es `UserDefaults` sino un fichero en `$XDG_CONFIG_HOME/<monitor>/state.toml` o similar. El item de menú es `MenuItem::Standard` con `activate` callback que muta el state y llama al `handle.update`. No lo he portado a Linux todavía — si lo necesitas en el tray Linux primero, mantén el mismo nombre de propiedad (`compact_mode`) y el mismo verbo en el título para consistencia entre frontends.
+
+**Tras tocar el código del tray macOS**: rebuild con `swift build -c release` + `./scripts/build-app.sh` + `launchctl kickstart -k gui/$(id -u)/com.maximofn.<monitor>-tray` para que la instancia corriendo recoja el binario nuevo. Sin kickstart sigues con el binario en memoria de cuando arrancó la sesión.
+
 ### Túnel SSH persistente vía LaunchAgent — alternativa al `ssh -fN` manual
 
 `ssh -fN -L 9123:127.0.0.1:9123 <host>` lanzado a mano funciona pero muere si reinicias el Mac, si SSH se cae por inactividad o si la VPN renegocia. Para uso real, mete un LaunchAgent que lo gobierne:
